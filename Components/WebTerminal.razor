@@ -1,0 +1,247 @@
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+
+<div class="terminal-container">
+    <div class="terminal-header">
+        <span class="terminal-title">🚀 Azure CLI Web Terminal</span>
+        <button class="btn-close" @onclick="CloseTerminal" aria-label="Close"></button>
+    </div>
+    <div class="terminal-body" id="terminal-@SessionId">
+        <div class="terminal-output" id="terminal-output-@SessionId"></div>
+        <div class="terminal-input-line">
+            <span class="terminal-prompt">PS &gt;</span>
+            <input @ref="terminalInput" 
+                   @onkeypress="HandleKeyPress" 
+                   @onkeydown="HandleKeyDown"
+                   class="terminal-input" 
+                   id="terminal-input-@SessionId"
+                   autocomplete="off"
+                   spellcheck="false" />
+        </div>
+    </div>
+</div>
+
+<style>
+    .terminal-container {
+        background: #1e1e1e;
+        border: 1px solid #3c3c3c;
+        border-radius: 6px;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 14px;
+        color: #d4d4d4;
+        height: 500px;
+        display: flex;
+        flex-direction: column;
+        margin: 10px 0;
+    }
+
+    .terminal-header {
+        background: #2d2d30;
+        padding: 8px 16px;
+        border-bottom: 1px solid #3c3c3c;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-radius: 6px 6px 0 0;
+    }
+
+    .terminal-title {
+        font-weight: bold;
+        color: #ffffff;
+    }
+
+    .btn-close {
+        background: none;
+        border: none;
+        color: #ffffff;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 0;
+        width: 20px;
+        height: 20px;
+    }
+
+    .btn-close:hover {
+        background: #e81123;
+        border-radius: 3px;
+    }
+
+    .terminal-body {
+        flex: 1;
+        padding: 10px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .terminal-output {
+        flex: 1;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin-bottom: 10px;
+        line-height: 1.4;
+    }
+
+    .terminal-input-line {
+        display: flex;
+        align-items: center;
+    }
+
+    .terminal-prompt {
+        color: #569cd6;
+        margin-right: 8px;
+        white-space: nowrap;
+    }
+
+    .terminal-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: #d4d4d4;
+        font-family: inherit;
+        font-size: inherit;
+        outline: none;
+        caret-color: #d4d4d4;
+    }
+
+    .terminal-input::placeholder {
+        color: #6a6a6a;
+    }
+
+    .terminal-error {
+        color: #f48771;
+    }
+
+    .terminal-success {
+        color: #4ec9b0;
+    }
+
+    .terminal-warning {
+        color: #dcdcaa;
+    }
+
+    .terminal-prompt-output {
+        color: #569cd6;
+        font-weight: bold;
+    }
+</style>
+
+@code {
+    [Parameter] public string SessionId { get; set; } = Guid.NewGuid().ToString();
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference terminalInput;
+    private DotNetObjectReference<WebTerminal>? dotNetRef;
+    private List<string> commandHistory = new();
+    private int historyIndex = -1;
+    private string currentCommand = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("initializeTerminal", SessionId, dotNetRef);
+            await terminalInput.FocusAsync();
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ExecuteCommand();
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowUp")
+        {
+            await NavigateHistory(-1);
+        }
+        else if (e.Key == "ArrowDown")
+        {
+            await NavigateHistory(1);
+        }
+    }
+
+    private async Task NavigateHistory(int direction)
+    {
+        if (commandHistory.Count == 0) return;
+
+        historyIndex += direction;
+        
+        if (historyIndex < 0)
+        {
+            historyIndex = 0;
+        }
+        else if (historyIndex >= commandHistory.Count)
+        {
+            historyIndex = commandHistory.Count - 1;
+        }
+
+        if (historyIndex < commandHistory.Count)
+        {
+            currentCommand = commandHistory[historyIndex];
+            await JSRuntime.InvokeVoidAsync("setTerminalInputValue", SessionId, currentCommand);
+        }
+    }
+
+    private async Task ExecuteCommand()
+    {
+        var command = await JSRuntime.InvokeAsync<string>("getTerminalInputValue", SessionId);
+        
+        if (!string.IsNullOrWhiteSpace(command))
+        {
+            commandHistory.Add(command);
+            historyIndex = commandHistory.Count;
+        }
+
+        await JSRuntime.InvokeVoidAsync("clearTerminalInput", SessionId);
+        await JSRuntime.InvokeVoidAsync("sendTerminalCommand", SessionId, command);
+    }
+
+    [JSInvokable]
+    public async Task OnTerminalMessage(string messageJson)
+    {
+        try
+        {
+            var message = JsonSerializer.Deserialize<TerminalMessage>(messageJson);
+            if (message != null)
+            {
+                await JSRuntime.InvokeVoidAsync("appendTerminalOutput", SessionId, message.Type, message.Content);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("appendTerminalOutput", SessionId, "error", $"Error processing message: {ex.Message}");
+        }
+    }
+
+    private async Task CloseTerminal()
+    {
+        await JSRuntime.InvokeVoidAsync("closeTerminalConnection", SessionId);
+        await OnClose.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("closeTerminalConnection", SessionId);
+            dotNetRef?.Dispose();
+        }
+        catch
+        {
+            // Ignore disposal errors
+        }
+    }
+
+    public class TerminalMessage
+    {
+        public string Type { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+}

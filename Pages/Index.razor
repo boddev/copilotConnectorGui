@@ -1,0 +1,804 @@
+@page "/"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Authentication
+@using CopilotConnectorGui.Services
+@using CopilotConnectorGui.Models
+@using CopilotConnectorGui.Components
+@using System.Security.Claims
+@attribute [Authorize]
+@inject AppRegistrationService AppRegistrationService
+@inject SchemaService SchemaService
+@inject GraphService GraphService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Copilot Connector Setup</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">Microsoft Graph Copilot Connector Setup</h1>
+            
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="alert alert-danger" role="alert">
+                    <strong>Error:</strong> @_errorMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div class="alert alert-success" role="alert">
+                    <strong>Success:</strong> @_successMessage
+                </div>
+            }
+
+            <AuthorizeView>
+                <NotAuthorized>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Authentication Required</h3>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="mb-4">
+                                <i class="bi bi-shield-lock" style="font-size: 3rem; color: #0078d4;"></i>
+                            </div>
+                            <h4>Sign in to Your Microsoft Entra ID Tenant</h4>
+                            <p class="lead">To create app registrations and external connections, you need to sign in with an account that has administrator privileges in your Azure AD tenant.</p>
+                            
+                            <div class="alert alert-info">
+                                <strong>Required Permissions:</strong>
+                                <ul class="list-unstyled mb-0">
+                                    <li>• Application Administrator or Global Administrator role</li>
+                                    <li>• Ability to grant admin consent to applications</li>
+                                    <li>• Access to Microsoft Graph APIs</li>
+                                </ul>
+                            </div>
+
+                            <div class="alert alert-success">
+                                <strong>🚀 One-Click Bootstrap Available!</strong> 
+                                If you have Azure CLI installed and are logged in, you can automatically create 
+                                the initial app registration and configure SSO with one click.
+                            </div>
+
+                            <div class="alert alert-info">
+                                <strong>Single Sign-On (SSO):</strong> If you're already signed in to Office 365, Azure Portal, or other Microsoft services, 
+                                click "Try Auto Sign-in" to use your existing session. For first-time setup or if SSO fails, use "Sign in with Microsoft" below.
+                            </div>
+
+                            <div class="alert alert-warning">
+                                <strong>Note:</strong> This application creates its own app registrations, so the first sign-in must be done manually 
+                                to establish the proper authentication configuration.
+                            </div>
+
+                            <div class="alert alert-info">
+                                <strong>Alternative Option:</strong> If you don't have an existing app registration, you can use Azure CLI authentication instead. 
+                                Make sure you have Azure CLI installed and run <code>az login</code> before using this option.
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-success btn-lg" @onclick="PerformBootstrap" disabled="@_isProcessing">
+                                    @if (_isBootstrapping)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        <text>Setting up automatically...</text>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-magic"></i> <text>🚀 Auto-Setup with Azure CLI</text>
+                                    }
+                                </button>
+                                <div class="text-center my-2">
+                                    <small class="text-muted">-- OR --</small>
+                                </div>
+                                <a href="MicrosoftIdentity/Account/SignIn" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-microsoft"></i> Sign in with Microsoft
+                                </a>
+                                <button type="button" class="btn btn-outline-primary btn-lg" @onclick="ManualAutoLogin" disabled="@_isProcessing">
+                                    @if (_isProcessing && !_isBootstrapping)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        <text>Trying Auto Sign-in...</text>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-arrow-clockwise"></i> <text>Try Auto Sign-in</text>
+                                    }
+                                </button>
+                                <button type="button" class="btn btn-info btn-lg" @onclick="OpenWebTerminal">
+                                    <i class="bi bi-terminal-fill"></i> Open Azure CLI Terminal
+                                </button>
+                                <button type="button" class="btn btn-outline-primary btn-lg" @onclick="CheckAzureCli">
+                                    <i class="bi bi-terminal"></i> Use Azure CLI Authentication
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </NotAuthorized>
+                <Authorized Context="authUser">
+                    @if (_currentStep == SetupStep.Configuration)
+                    {
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Step 1: Configuration</h3>
+                                @if (_useAzureCli)
+                                {
+                                    <small class="text-muted">Authenticated via Azure CLI</small>
+                                }
+                                else
+                                {
+                                    <small class="text-muted">Signed in as: @authUser.User.Identity?.Name</small>
+                                }
+                            </div>
+                            <div class="card-body">
+                                <EditForm Model="@_configuration" OnValidSubmit="@HandleConfigurationSubmit" Context="editContext">
+                                    <DataAnnotationsValidator />
+                                    <ValidationSummary />
+
+                                    <div class="mb-3">
+                                        <label for="tenantId" class="form-label">Tenant ID</label>
+                                        <InputText id="tenantId" class="form-control" @bind-Value="_configuration.TenantId" placeholder="Auto-populated from your login" readonly />
+                                        <div class="form-text">
+                                            <i class="bi bi-check-circle-fill text-success"></i> 
+                                            Auto-populated from your authenticated session
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3">
+                                        <label for="jsonSample" class="form-label">JSON Sample Data</label>
+                                        <InputTextArea id="jsonSample" class="form-control" rows="10" @bind-Value="_configuration.JsonSample" placeholder="Enter sample JSON data for schema creation" />
+                                        <div class="form-text">Provide a sample JSON object that represents the data structure you want to index</div>
+                                        
+                                        <div class="mt-2">
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LoadSampleJson">
+                                                Load Sample JSON
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" disabled="@_isProcessing">
+                                            @if (_isProcessing)
+                                            {
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                <text> Processing...</text>
+                                            }
+                                            else
+                                            {
+                                                <text>Create App Registration & External Connection</text>
+                                            }
+                                        </button>
+                                        
+                                        <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-secondary">
+                                            Sign Out
+                                        </a>
+                                    </div>
+                                </EditForm>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_currentStep == SetupStep.AppRegistrationCreated)
+                    {
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Step 2: App Registration Created</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-info">
+                                    <strong>App Registration Created Successfully!</strong><br />
+                                    Now creating schema and external connection...
+                                </div>
+                                
+                                <div class="d-flex justify-content-center">
+                                    <div class="spinner-border" role="status">
+                                        <span class="visually-hidden">Creating schema...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    @if (_currentStep == SetupStep.Completed && _appRegistrationResult != null)
+                    {
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Step 3: Setup Complete!</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="alert alert-success">
+                                    <strong>Congratulations!</strong> Your Microsoft Graph External Connection has been created successfully.
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h5>App Registration Details</h5>
+                                        <div class="mb-3">
+                                            <label class="form-label">Application (Client) ID</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" value="@_appRegistrationResult.ApplicationId" readonly />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyToClipboard(_appRegistrationResult.ApplicationId)">
+                                                    Copy
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="form-label">Client Secret</label>
+                                            <div class="input-group">
+                                                <input type="@(_showSecret ? "text" : "password")" class="form-control" value="@_appRegistrationResult.ClientSecret" readonly />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => _showSecret = !_showSecret">
+                                                    @(_showSecret ? "Hide" : "Show")
+                                                </button>
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyToClipboard(_appRegistrationResult.ClientSecret)">
+                                                    Copy
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="form-label">Tenant ID</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" value="@_appRegistrationResult.TenantId" readonly />
+                                                <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyToClipboard(_appRegistrationResult.TenantId)">
+                                                    Copy
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <h5>Connection Details</h5>
+                                        @if (_schemaResult != null)
+                                        {
+                                            <div class="mb-3">
+                                                <label class="form-label">Connection ID</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" value="@_schemaResult.ConnectionId" readonly />
+                                                    <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyToClipboard(_schemaResult.ConnectionId!)">
+                                                        Copy
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        <div class="alert alert-warning">
+                                            <strong>Important:</strong> Save these credentials securely. The client secret cannot be retrieved again.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 d-flex gap-2">
+                                    <button class="btn btn-primary" @onclick="StartOver">Create Another Connection</button>
+                                    <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-secondary">Sign Out</a>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </Authorized>
+            </AuthorizeView>
+
+            @* Azure CLI Configuration Section - shown regardless of authentication status *@
+            @if (_useAzureCli && _currentStep == SetupStep.Configuration)
+            {
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h3>Step 1: Configuration (Azure CLI)</h3>
+                        <small class="text-muted">Using Azure CLI authentication</small>
+                    </div>
+                    <div class="card-body">
+                        <EditForm Model="@_configuration" OnValidSubmit="@HandleConfigurationSubmit" Context="editContext">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary />
+
+                            @if (!string.IsNullOrEmpty(_errorMessage))
+                            {
+                                <div class="alert alert-danger">@_errorMessage</div>
+                            }
+
+                            @if (!string.IsNullOrEmpty(_successMessage))
+                            {
+                                <div class="alert alert-success">@_successMessage</div>
+                            }
+
+                            <div class="mb-3">
+                                <label for="tenantId" class="form-label">Tenant ID</label>
+                                <InputText id="tenantId" class="form-control" @bind-Value="_configuration.TenantId" placeholder="Enter your Azure AD tenant ID" />
+                                <div class="form-text">
+                                    Enter the tenant ID where you want to create the app registration
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="jsonSample" class="form-label">JSON Sample Data</label>
+                                <InputTextArea id="jsonSample" class="form-control" rows="10" @bind-Value="_configuration.JsonSample" placeholder="Enter sample JSON data for schema creation" />
+                                <div class="form-text">Provide a sample JSON object that represents the data structure you want to index</div>
+                                
+                                <div class="mt-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="LoadSampleJson">
+                                        Load Sample JSON
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary" disabled="@_isProcessing">
+                                    @if (_isProcessing)
+                                    {
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                        <text> Processing...</text>
+                                    }
+                                    else
+                                    {
+                                        <text>Create App Registration & Schema</text>
+                                    }
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => _useAzureCli = false">
+                                    Back to Authentication
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (_showWebTerminal)
+    {
+        <div class="row mt-4">
+            <div class="col-12">
+                <WebTerminal SessionId="@_terminalSessionId" OnClose="CloseWebTerminal" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private TenantConfigurationModel _configuration = new();
+    private AppRegistrationResult? _appRegistrationResult;
+    private SchemaCreationResult? _schemaResult;
+    private bool _isProcessing = false;
+    private bool _isBootstrapping = false;
+    private bool _showSecret = false;
+    private bool _useAzureCli = false;
+    private bool _autoLoginAttempted = false;
+    private bool _showWebTerminal = false;
+    private string _terminalSessionId = Guid.NewGuid().ToString();
+    private string _errorMessage = string.Empty;
+    private string _successMessage = string.Empty;
+    private SetupStep _currentStep = SetupStep.Configuration;
+
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated ?? false)
+            {
+                // Extract tenant ID from the authenticated user's claims
+                var tenantIdClaim = authState.User.FindFirst("tid") ?? authState.User.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid");
+                if (tenantIdClaim != null)
+                {
+                    _configuration.TenantId = tenantIdClaim.Value;
+                    StateHasChanged();
+                }
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Check if auto-login failed (can only do this after render)
+            try
+            {
+                var url = await JSRuntime.InvokeAsync<string>("eval", "window.location.href");
+                if (url.Contains("autoLoginFailed=true"))
+                {
+                    if (url.Contains("reason=placeholder"))
+                    {
+                        _errorMessage = "SSO is not available yet: This application is configured for creating app registrations. Once you complete the setup process, SSO will be available for future sessions. Please use 'Sign in with Microsoft' to begin.";
+                    }
+                    else if (url.Contains("reason=configuration"))
+                    {
+                        _errorMessage = "Auto sign-in is not available: This application needs to be configured with a valid Azure AD app registration first. Please use 'Sign in with Microsoft' for initial setup.";
+                    }
+                    else
+                    {
+                        _errorMessage = "Auto sign-in failed. Please sign in manually or try again.";
+                    }
+                    StateHasChanged();
+                }
+
+                // Attempt automatic silent authentication if not already authenticated
+                if (AuthenticationStateTask != null)
+                {
+                    var authState = await AuthenticationStateTask;
+                    if (!(authState.User.Identity?.IsAuthenticated ?? false) && !_autoLoginAttempted)
+                    {
+                        _autoLoginAttempted = true;
+                        await TryAutoLogin();
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore JavaScript interop errors during auto-login attempts
+            }
+        }
+    }
+
+    private async Task TryAutoLogin()
+    {
+        try
+        {
+            // Check if we're already authenticated in this app
+            if (AuthenticationStateTask != null)
+            {
+                var authState = await AuthenticationStateTask;
+                if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    // Already authenticated - just refresh the page to show authenticated content
+                    StateHasChanged();
+                    return;
+                }
+            }
+
+            // Check for Microsoft authentication cookies (from Office 365, Azure Portal, etc.)
+            var hasMicrosoftSession = await JSRuntime.InvokeAsync<bool>("eval", @"
+                document.cookie.indexOf('ESTSAUTH') !== -1 || 
+                document.cookie.indexOf('ESTSAUTHPERSISTENT') !== -1 || 
+                document.cookie.indexOf('.AspNetCore.') !== -1 ||
+                document.cookie.indexOf('SignInStateCookie') !== -1
+            ");
+            
+            if (hasMicrosoftSession)
+            {
+                // Attempt silent authentication to leverage existing Microsoft session
+                await JSRuntime.InvokeVoidAsync("window.location.assign", "/auto-login");
+            }
+        }
+        catch
+        {
+            // Silent failure - don't show error for auto-login attempts
+        }
+    }
+
+    private async Task ManualAutoLogin()
+    {
+        try
+        {
+            _isProcessing = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            // First check if we're already authenticated
+            if (AuthenticationStateTask != null)
+            {
+                var authState = await AuthenticationStateTask;
+                if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    _successMessage = "You are already signed in! Refreshing the page...";
+                    StateHasChanged();
+                    await Task.Delay(1000);
+                    await JSRuntime.InvokeVoidAsync("window.location.reload");
+                    return;
+                }
+            }
+
+            // Check for any Microsoft authentication session (Office 365, Azure Portal, etc.)
+            var hasMicrosoftSession = await JSRuntime.InvokeAsync<bool>("eval", @"
+                document.cookie.indexOf('ESTSAUTH') !== -1 || 
+                document.cookie.indexOf('ESTSAUTHPERSISTENT') !== -1 || 
+                document.cookie.indexOf('.AspNetCore.') !== -1 ||
+                document.cookie.indexOf('SignInStateCookie') !== -1 ||
+                localStorage.getItem('msal.idtoken') !== null ||
+                sessionStorage.getItem('msal.idtoken') !== null
+            ");
+            
+            if (!hasMicrosoftSession)
+            {
+                _errorMessage = "No Microsoft authentication session detected. Please sign in to portal.office.com or use 'Sign in with Microsoft' below.";
+                _isProcessing = false;
+                StateHasChanged();
+                return;
+            }
+
+            _successMessage = "Microsoft session detected. Attempting auto sign-in...";
+            StateHasChanged();
+            await Task.Delay(500); // Brief delay to show the message
+
+            // Attempt silent authentication using existing Microsoft session
+            await JSRuntime.InvokeVoidAsync("window.location.assign", "/auto-login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Auto sign-in failed: {ex.Message}. Please use 'Sign in with Microsoft' instead.";
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PerformBootstrap()
+    {
+        try
+        {
+            _isBootstrapping = true;
+            _isProcessing = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            // Check bootstrap status first
+            var statusResponse = await JSRuntime.InvokeAsync<object>("fetch", "/api/bootstrap/status");
+            var statusResult = await JSRuntime.InvokeAsync<string>("response => response.json()", statusResponse);
+            
+            // Parse the status result (simplified - in production you'd use proper JSON parsing)
+            if (statusResult.Contains("\"canBootstrap\":false"))
+            {
+                if (statusResult.Contains("\"azureCliInstalled\":false"))
+                {
+                    _errorMessage = "Azure CLI is not installed. Please install Azure CLI first: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli";
+                }
+                else if (statusResult.Contains("\"azureCliLoggedIn\":false"))
+                {
+                    _errorMessage = "Please log in to Azure CLI first by running: az login";
+                }
+                else
+                {
+                    _errorMessage = "Bootstrap requirements not met. Please ensure Azure CLI is installed and you're logged in.";
+                }
+                return;
+            }
+
+            _successMessage = "Azure CLI detected! Creating app registration...";
+            StateHasChanged();
+            await Task.Delay(500);
+
+            // Perform the bootstrap
+            var response = await JSRuntime.InvokeAsync<object>("fetch", "/api/bootstrap/start", new
+            {
+                method = "POST",
+                headers = new { ContentType = "application/json" }
+            });
+            
+            var result = await JSRuntime.InvokeAsync<string>("response => response.json()", response);
+            
+            if (result.Contains("\"success\":true"))
+            {
+                _successMessage = "🎉 Bootstrap completed successfully! The application has been configured with a new app registration. Please restart the application to enable SSO.";
+                _errorMessage = string.Empty;
+                
+                // Show restart instructions
+                await Task.Delay(2000);
+                _successMessage += "\n\n⚠️ IMPORTANT: Please restart the application (Ctrl+C and run 'dotnet run' again) to load the new configuration.";
+            }
+            else
+            {
+                _errorMessage = "Bootstrap failed. Please try manual setup instead.";
+                _successMessage = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Bootstrap error: {ex.Message}. Please try manual setup instead.";
+            _successMessage = string.Empty;
+        }
+        finally
+        {
+            _isBootstrapping = false;
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenWebTerminal()
+    {
+        _showWebTerminal = true;
+        _terminalSessionId = Guid.NewGuid().ToString();
+        StateHasChanged();
+    }
+
+    private void CloseWebTerminal()
+    {
+        _showWebTerminal = false;
+        StateHasChanged();
+    }
+
+    private async Task CheckAzureCli()
+    {
+        try
+        {
+            _isProcessing = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            var isLoggedIn = await GraphService.IsAzureCliLoggedInAsync();
+            if (isLoggedIn)
+            {
+                _useAzureCli = true;
+                _currentStep = SetupStep.Configuration;
+                _successMessage = "Azure CLI authentication detected. You can now proceed with app registration creation.";
+            }
+            else
+            {
+                _errorMessage = "Azure CLI authentication not found. Please run 'az login' in your terminal first, then try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error checking Azure CLI authentication: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleConfigurationSubmit()
+    {
+        try
+        {
+            _errorMessage = string.Empty;
+            
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(_configuration.TenantId))
+            {
+                _errorMessage = "Tenant ID is missing. Please refresh the page and sign in again.";
+                StateHasChanged();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_configuration.JsonSample))
+            {
+                _errorMessage = "Please provide JSON sample data for schema creation.";
+                StateHasChanged();
+                return;
+            }
+
+            // Validate JSON format
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(_configuration.JsonSample);
+            }
+            catch (Exception jsonEx)
+            {
+                _errorMessage = $"Invalid JSON format: {jsonEx.Message}";
+                StateHasChanged();
+                return;
+            }
+
+            // Check authentication
+            if (AuthenticationStateTask == null)
+            {
+                _errorMessage = "Authentication not available. Please refresh the page and try again.";
+                StateHasChanged();
+                return;
+            }
+
+            _isProcessing = true;
+            StateHasChanged();
+
+            var authState = await AuthenticationStateTask;
+            if (!authState.User.Identity?.IsAuthenticated ?? true)
+            {
+                _errorMessage = "You must be authenticated to create app registrations.";
+                _isProcessing = false;
+                StateHasChanged();
+                return;
+            }
+
+            var user = authState.User;
+
+            // Step 1: Create App Registration
+            if (_useAzureCli)
+            {
+                _appRegistrationResult = await AppRegistrationService.CreateAppRegistrationWithAzureCliAsync(_configuration.TenantId);
+            }
+            else
+            {
+                _appRegistrationResult = await AppRegistrationService.CreateAppRegistrationAsync(user, _configuration.TenantId);
+            }
+
+            if (!_appRegistrationResult.Success)
+            {
+                _errorMessage = _appRegistrationResult.ErrorMessage ?? "Failed to create app registration.";
+                _isProcessing = false;
+                StateHasChanged();
+                return;
+            }
+
+            _currentStep = SetupStep.AppRegistrationCreated;
+            StateHasChanged();
+
+            // Step 2: Create Schema and Connection
+            _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
+                _configuration.TenantId,
+                _appRegistrationResult.ApplicationId,
+                _appRegistrationResult.ClientSecret,
+                _configuration.JsonSample);
+
+            if (!_schemaResult.Success)
+            {
+                _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection.";
+                _isProcessing = false;
+                StateHasChanged();
+                return;
+            }
+
+            _currentStep = SetupStep.Completed;
+            _successMessage = "Setup completed successfully! Your external connection is ready to use.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void LoadSampleJson()
+    {
+        _configuration.JsonSample = @"{
+  ""title"": ""Sample Product"",
+  ""description"": ""This is a sample product for demonstration"",
+  ""price"": 29.99,
+  ""category"": ""Electronics"",
+  ""sku"": ""PROD-001"",
+  ""inStock"": true,
+  ""tags"": [""sample"", ""demo"", ""product""],
+  ""manufacturer"": {
+    ""name"": ""Sample Corp"",
+    ""country"": ""USA""
+  },
+  ""lastUpdated"": ""2024-01-15T10:30:00Z""
+}";
+        StateHasChanged();
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            // You could show a toast notification here
+        }
+        catch
+        {
+            // Fallback for older browsers
+            await JSRuntime.InvokeVoidAsync("prompt", "Copy this value:", text);
+        }
+    }
+
+    private void TestButton()
+    {
+        _errorMessage = "Test button clicked! Component is working.";
+        StateHasChanged();
+    }
+
+    private void StartOver()
+    {
+        _configuration = new TenantConfigurationModel();
+        _appRegistrationResult = null;
+        _schemaResult = null;
+        _currentStep = SetupStep.Configuration;
+        _errorMessage = string.Empty;
+        _successMessage = string.Empty;
+        _showSecret = false;
+        StateHasChanged();
+    }
+
+    private enum SetupStep
+    {
+        Configuration,
+        AppRegistrationCreated,
+        Completed
+    }
+}

@@ -1,0 +1,28 @@
+﻿<Project>
+  <ItemGroup>
+    <StaticWebAssetEndpoint Include="_content/CopilotConnectorGui/css/site.9aywbnexf5.css">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\css\site.css'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"9aywbnexf5"},{"Name":"integrity","Value":"sha256-kTxisYMS1t0fCBdAXdF\u002BRoe7eJMMvCh7iiSmxgIfw8o="},{"Name":"label","Value":"_content/CopilotConnectorGui/css/site.css"}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Accept-Ranges","Value":"bytes"},{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"1580"},{"Name":"Content-Type","Value":"text/css"},{"Name":"ETag","Value":"\u0022kTxisYMS1t0fCBdAXdF\u002BRoe7eJMMvCh7iiSmxgIfw8o=\u0022"},{"Name":"Last-Modified","Value":"Thu, 17 Jul 2025 21:28:53 GMT"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="_content/CopilotConnectorGui/css/site.css">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\css\site.css'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-kTxisYMS1t0fCBdAXdF\u002BRoe7eJMMvCh7iiSmxgIfw8o="}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Accept-Ranges","Value":"bytes"},{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"1580"},{"Name":"Content-Type","Value":"text/css"},{"Name":"ETag","Value":"\u0022kTxisYMS1t0fCBdAXdF\u002BRoe7eJMMvCh7iiSmxgIfw8o=\u0022"},{"Name":"Last-Modified","Value":"Thu, 17 Jul 2025 21:28:53 GMT"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="_content/CopilotConnectorGui/js/terminal.3a97sx4b2t.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\js\terminal.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"fingerprint","Value":"3a97sx4b2t"},{"Name":"integrity","Value":"sha256-RRW/x8AdvT\u002Bzj\u002B7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="},{"Name":"label","Value":"_content/CopilotConnectorGui/js/terminal.js"}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Accept-Ranges","Value":"bytes"},{"Name":"Cache-Control","Value":"max-age=31536000, immutable"},{"Name":"Content-Length","Value":"4785"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022RRW/x8AdvT\u002Bzj\u002B7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\u0022"},{"Name":"Last-Modified","Value":"Fri, 18 Jul 2025 02:04:28 GMT"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+    <StaticWebAssetEndpoint Include="_content/CopilotConnectorGui/js/terminal.js">
+      <AssetFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\staticwebassets\js\terminal.js'))</AssetFile>
+      <Selectors><![CDATA[[]]]></Selectors>
+      <EndpointProperties><![CDATA[[{"Name":"integrity","Value":"sha256-RRW/x8AdvT\u002Bzj\u002B7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="}]]]></EndpointProperties>
+      <ResponseHeaders><![CDATA[[{"Name":"Accept-Ranges","Value":"bytes"},{"Name":"Cache-Control","Value":"no-cache"},{"Name":"Content-Length","Value":"4785"},{"Name":"Content-Type","Value":"text/javascript"},{"Name":"ETag","Value":"\u0022RRW/x8AdvT\u002Bzj\u002B7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\u0022"},{"Name":"Last-Modified","Value":"Fri, 18 Jul 2025 02:04:28 GMT"}]]]></ResponseHeaders>
+    </StaticWebAssetEndpoint>
+  </ItemGroup>
+</Project>

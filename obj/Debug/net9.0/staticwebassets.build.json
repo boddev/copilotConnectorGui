@@ -1,0 +1,702 @@
+{
+  "Version": 1,
+  "Hash": "o1tCVvmghSNYf56/0WaV6o3y5iwyyKmHLL4o9ibkc88=",
+  "Source": "CopilotConnectorGui",
+  "BasePath": "_content/CopilotConnectorGui",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "CopilotConnectorGui\\wwwroot",
+      "Source": "CopilotConnectorGui",
+      "ContentRoot": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\",
+      "BasePath": "_content/CopilotConnectorGui",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\1e3q1ld71t-9aywbnexf5.gz",
+      "SourceId": "CopilotConnectorGui",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\",
+      "BasePath": "_content/CopilotConnectorGui",
+      "RelativePath": "css/site#[.{fingerprint=9aywbnexf5}]?.css.gz",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Alternative",
+      "AssetMergeBehavior": "",
+      "AssetMergeSource": "",
+      "RelatedAsset": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\css\\site.css",
+      "AssetTraitName": "Content-Encoding",
+      "AssetTraitValue": "gzip",
+      "Fingerprint": "i2yikkss6r",
+      "Integrity": "Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc=",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\css\\site.css"
+    },
+    {
+      "Identity": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\d48lrsoisr-3a97sx4b2t.gz",
+      "SourceId": "CopilotConnectorGui",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\",
+      "BasePath": "_content/CopilotConnectorGui",
+      "RelativePath": "js/terminal#[.{fingerprint=3a97sx4b2t}]?.js.gz",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Alternative",
+      "AssetMergeBehavior": "",
+      "AssetMergeSource": "",
+      "RelatedAsset": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\js\\terminal.js",
+      "AssetTraitName": "Content-Encoding",
+      "AssetTraitValue": "gzip",
+      "Fingerprint": "mc4kbci29i",
+      "Integrity": "Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw=",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\js\\terminal.js"
+    },
+    {
+      "Identity": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\css\\site.css",
+      "SourceId": "CopilotConnectorGui",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\",
+      "BasePath": "_content/CopilotConnectorGui",
+      "RelativePath": "css/site#[.{fingerprint}]?.css",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "Fingerprint": "9aywbnexf5",
+      "Integrity": "kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o=",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\css\\site.css"
+    },
+    {
+      "Identity": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\js\\terminal.js",
+      "SourceId": "CopilotConnectorGui",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\",
+      "BasePath": "_content/CopilotConnectorGui",
+      "RelativePath": "js/terminal#[.{fingerprint}]?.js",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "Fingerprint": "3a97sx4b2t",
+      "Integrity": "RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\js\\terminal.js"
+    }
+  ],
+  "Endpoints": [
+    {
+      "Route": "css/site.9aywbnexf5.css",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\1e3q1ld71t-9aywbnexf5.gz",
+      "Selectors": [
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip",
+          "Quality": "0.001097694841"
+        }
+      ],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "910"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "W/\"kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o=\""
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "9aywbnexf5"
+        },
+        {
+          "Name": "label",
+          "Value": "css/site.css"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o="
+        }
+      ]
+    },
+    {
+      "Route": "css/site.9aywbnexf5.css",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\css\\site.css",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1580"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "9aywbnexf5"
+        },
+        {
+          "Name": "label",
+          "Value": "css/site.css"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o="
+        }
+      ]
+    },
+    {
+      "Route": "css/site.9aywbnexf5.css.gz",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\1e3q1ld71t-9aywbnexf5.gz",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "910"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "9aywbnexf5"
+        },
+        {
+          "Name": "label",
+          "Value": "css/site.css.gz"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc="
+        }
+      ]
+    },
+    {
+      "Route": "css/site.css",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\1e3q1ld71t-9aywbnexf5.gz",
+      "Selectors": [
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip",
+          "Quality": "0.001097694841"
+        }
+      ],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "910"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "W/\"kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o=\""
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o="
+        }
+      ]
+    },
+    {
+      "Route": "css/site.css",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\css\\site.css",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1580"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-kTxisYMS1t0fCBdAXdF+Roe7eJMMvCh7iiSmxgIfw8o="
+        }
+      ]
+    },
+    {
+      "Route": "css/site.css.gz",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\1e3q1ld71t-9aywbnexf5.gz",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "910"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/css"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Thu, 17 Jul 2025 21:28:53 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-Bl+GmAvBjjvBNYnUDXrUuz06x4nF4mrMQp9a7z3mvUc="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.3a97sx4b2t.js",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\d48lrsoisr-3a97sx4b2t.gz",
+      "Selectors": [
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip",
+          "Quality": "0.000801282051"
+        }
+      ],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1247"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "W/\"RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\""
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "3a97sx4b2t"
+        },
+        {
+          "Name": "label",
+          "Value": "js/terminal.js"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.3a97sx4b2t.js",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\js\\terminal.js",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "4785"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "3a97sx4b2t"
+        },
+        {
+          "Name": "label",
+          "Value": "js/terminal.js"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.3a97sx4b2t.js.gz",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\d48lrsoisr-3a97sx4b2t.gz",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1247"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "max-age=31536000, immutable"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "fingerprint",
+          "Value": "3a97sx4b2t"
+        },
+        {
+          "Name": "label",
+          "Value": "js/terminal.js.gz"
+        },
+        {
+          "Name": "integrity",
+          "Value": "sha256-Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.js",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\d48lrsoisr-3a97sx4b2t.gz",
+      "Selectors": [
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip",
+          "Quality": "0.000801282051"
+        }
+      ],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1247"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "W/\"RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\""
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.js",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\wwwroot\\js\\terminal.js",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "4785"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-RRW/x8AdvT+zj+7RqnJgrw6DBJ6slgoJDQGxqnkRXLQ="
+        }
+      ]
+    },
+    {
+      "Route": "js/terminal.js.gz",
+      "AssetFile": "C:\\Users\\BrianODo\\source\\repos\\copilotConnectorGui\\obj\\Debug\\net9.0\\compressed\\d48lrsoisr-3a97sx4b2t.gz",
+      "Selectors": [],
+      "ResponseHeaders": [
+        {
+          "Name": "Accept-Ranges",
+          "Value": "bytes"
+        },
+        {
+          "Name": "Content-Length",
+          "Value": "1247"
+        },
+        {
+          "Name": "Content-Type",
+          "Value": "text/javascript"
+        },
+        {
+          "Name": "ETag",
+          "Value": "\"Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw=\""
+        },
+        {
+          "Name": "Last-Modified",
+          "Value": "Fri, 18 Jul 2025 02:04:28 GMT"
+        },
+        {
+          "Name": "Cache-Control",
+          "Value": "no-cache"
+        },
+        {
+          "Name": "Content-Encoding",
+          "Value": "gzip"
+        },
+        {
+          "Name": "Vary",
+          "Value": "Content-Encoding"
+        }
+      ],
+      "EndpointProperties": [
+        {
+          "Name": "integrity",
+          "Value": "sha256-Bo6UzXdEBMJCrIMYqf55mCNW1ecoe80DSW0XTZtEfRw="
+        }
+      ]
+    }
+  ]
+}
