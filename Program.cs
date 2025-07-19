@@ -99,16 +99,20 @@ app.MapFallbackToPage("/_Host");
 app.MapControllers();
 
 // WebSocket endpoint for terminal
-app.Map("/ws/terminal", async (HttpContext context, WebTerminalService terminalService) =>
+app.Map("/ws/terminal", async (HttpContext context, WebTerminalService terminalService, ILogger<Program> logger) =>
 {
+    logger.LogInformation("WebSocket request received at /ws/terminal");
+    
     if (context.WebSockets.IsWebSocketRequest)
     {
         var sessionId = context.Request.Query["sessionId"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+        logger.LogInformation("Accepting WebSocket connection for session {SessionId}", sessionId);
         var webSocket = await context.WebSockets.AcceptWebSocketAsync();
         await terminalService.HandleWebSocketAsync(webSocket, sessionId);
     }
     else
     {
+        logger.LogWarning("Non-WebSocket request received at /ws/terminal");
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
     }
 });

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace CopilotConnectorGui.Services
 {
@@ -18,11 +19,13 @@ namespace CopilotConnectorGui.Services
 
         public async Task HandleWebSocketAsync(WebSocket webSocket, string sessionId)
         {
+            _logger.LogInformation("Starting WebSocket session {SessionId}", sessionId);
             var session = GetOrCreateSession(sessionId);
             session.WebSocket = webSocket;
 
             try
             {
+                _logger.LogInformation("Sending welcome message to session {SessionId}", sessionId);
                 // Send welcome message
                 await SendMessageAsync(webSocket, new TerminalMessage
                 {
@@ -40,6 +43,7 @@ namespace CopilotConnectorGui.Services
                     Content = "PS > "
                 });
 
+                _logger.LogInformation("Starting message loop for session {SessionId}", sessionId);
                 var buffer = new byte[4096];
                 while (webSocket.State == WebSocketState.Open)
                 {
@@ -48,15 +52,20 @@ namespace CopilotConnectorGui.Services
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
                         var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        _logger.LogInformation("Received message from session {SessionId}: {Message}", sessionId, message);
+                        
                         var terminalMessage = JsonSerializer.Deserialize<TerminalMessage>(message);
+                        _logger.LogInformation("Parsed message type: {Type}, content: {Content}", terminalMessage?.Type, terminalMessage?.Content);
                         
                         if (terminalMessage?.Type == "input")
                         {
+                            _logger.LogInformation("Processing command for session {SessionId}: {Command}", sessionId, terminalMessage.Content);
                             await ProcessCommandAsync(session, terminalMessage.Content);
                         }
                     }
                     else if (result.MessageType == WebSocketMessageType.Close)
                     {
+                        _logger.LogInformation("WebSocket close message received for session {SessionId}", sessionId);
                         break;
                     }
                 }
@@ -67,6 +76,7 @@ namespace CopilotConnectorGui.Services
             }
             finally
             {
+                _logger.LogInformation("Cleaning up session {SessionId}", sessionId);
                 _sessions.TryRemove(sessionId, out _);
                 session?.Dispose();
             }
@@ -84,18 +94,23 @@ namespace CopilotConnectorGui.Services
 
         private async Task ProcessCommandAsync(TerminalSession session, string command)
         {
+            _logger.LogInformation("ProcessCommandAsync called with command: '{Command}'", command);
+            
             if (string.IsNullOrWhiteSpace(command))
             {
+                _logger.LogInformation("Empty command, sending prompt");
                 await SendPromptAsync(session);
                 return;
             }
 
             command = command.Trim();
+            _logger.LogInformation("Processing trimmed command: '{Command}'", command);
 
             // Handle built-in commands
             switch (command.ToLower())
             {
                 case "exit":
+                    _logger.LogInformation("Processing exit command");
                     await SendMessageAsync(session.WebSocket!, new TerminalMessage
                     {
                         Type = "output",
@@ -105,6 +120,7 @@ namespace CopilotConnectorGui.Services
                     return;
 
                 case "clear":
+                    _logger.LogInformation("Processing clear command");
                     await SendMessageAsync(session.WebSocket!, new TerminalMessage
                     {
                         Type = "clear",
@@ -114,6 +130,7 @@ namespace CopilotConnectorGui.Services
                     return;
 
                 case "help":
+                    _logger.LogInformation("Processing help command");
                     await SendMessageAsync(session.WebSocket!, new TerminalMessage
                     {
                         Type = "output",
@@ -130,6 +147,7 @@ namespace CopilotConnectorGui.Services
                     return;
 
                 case "bootstrap":
+                    _logger.LogInformation("Processing bootstrap command");
                     await RunBootstrapCommandAsync(session);
                     return;
             }
@@ -137,14 +155,17 @@ namespace CopilotConnectorGui.Services
             // Handle Azure CLI commands
             if (command.StartsWith("az "))
             {
+                _logger.LogInformation("Processing Azure CLI command: {Command}", command);
                 await ExecuteAzureCliCommandAsync(session, command);
             }
             else if (command.StartsWith("powershell ") || command.StartsWith("pwsh "))
             {
+                _logger.LogInformation("Processing PowerShell command: {Command}", command);
                 await ExecutePowerShellCommandAsync(session, command);
             }
             else
             {
+                _logger.LogInformation("Unknown command: {Command}", command);
                 await SendMessageAsync(session.WebSocket!, new TerminalMessage
                 {
                     Type = "output",
@@ -516,11 +537,25 @@ namespace CopilotConnectorGui.Services
 
         private async Task SendMessageAsync(WebSocket webSocket, TerminalMessage message)
         {
-            if (webSocket.State == WebSocketState.Open)
+            try
             {
-                var json = JsonSerializer.Serialize(message);
-                var bytes = Encoding.UTF8.GetBytes(json);
-                await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                _logger.LogInformation("Sending message - Type: {Type}, Content: {Content}", message.Type, message.Content?.Substring(0, Math.Min(message.Content.Length, 100)));
+                
+                if (webSocket.State == WebSocketState.Open)
+                {
+                    var json = JsonSerializer.Serialize(message);
+                    var bytes = Encoding.UTF8.GetBytes(json);
+                    await webSocket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    _logger.LogInformation("Message sent successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("WebSocket is not open. State: {State}", webSocket.State);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending message");
             }
         }
     }
@@ -540,7 +575,10 @@ namespace CopilotConnectorGui.Services
 
     public class TerminalMessage
     {
+        [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty; // "output", "error", "input", "prompt", "clear"
+        
+        [JsonPropertyName("content")]
         public string Content { get; set; } = string.Empty;
     }
 }

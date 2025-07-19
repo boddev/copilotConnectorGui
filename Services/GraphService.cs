@@ -20,8 +20,16 @@ namespace CopilotConnectorGui.Services
         {
             try
             {
+                // Use specific delegated scopes including External Connection permissions
+                var scopes = new[] { 
+                    "https://graph.microsoft.com/Application.ReadWrite.All",
+                    "https://graph.microsoft.com/Directory.ReadWrite.All",
+                    "https://graph.microsoft.com/ExternalConnection.ReadWrite.All",
+                    "https://graph.microsoft.com/ExternalItem.ReadWrite.All"
+                };
+                
                 var accessToken = await _tokenAcquisition.GetAccessTokenForUserAsync(
-                    new[] { "https://graph.microsoft.com/.default" }, 
+                    scopes, 
                     user: user);
 
                 return accessToken;
@@ -97,6 +105,30 @@ namespace CopilotConnectorGui.Services
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
             httpClient.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
             return httpClient;
+        }
+
+        public async Task<bool> CheckUserPermissionsAsync(ClaimsPrincipal user)
+        {
+            try
+            {
+                using var httpClient = await GetAuthenticatedHttpClientAsync(user);
+                
+                // Try to access the applications endpoint to check permissions
+                var response = await httpClient.GetAsync("applications?$top=1");
+                
+                return response.IsSuccessStatusCode;
+            }
+            catch (Microsoft.Identity.Web.MicrosoftIdentityWebChallengeUserException ex)
+            {
+                _logger.LogWarning("Incremental consent required for user: {Error}", ex.Message);
+                // This is expected when new scopes are added - return false to trigger proper error handling
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking user permissions");
+                return false;
+            }
         }
     }
 }

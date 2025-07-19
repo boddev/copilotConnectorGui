@@ -1,9 +1,12 @@
 @page "/"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
 @using CopilotConnectorGui.Services
 @using CopilotConnectorGui.Models
-@using CopilotConnectorGui.Components
 @using System.Security.Claims
 @attribute [Authorize]
 @inject AppRegistrationService AppRegistrationService
@@ -23,6 +26,88 @@
                 <div class="alert alert-danger" role="alert">
                     <strong>Error:</strong> @_errorMessage
                 </div>
+                
+                @if (_errorMessage.Contains("TO FIX THIS:"))
+                {
+                    <div class="alert alert-warning" role="alert">
+                        <h5><i class="bi bi-tools"></i> Quick Fix - Configure App Permissions</h5>
+                        <p><strong>Follow these steps to configure the current app registration:</strong></p>
+                        
+                        <ol>
+                            <li>Open Azure Portal: <a href="https://portal.azure.com" target="_blank" class="btn btn-sm btn-outline-primary">Open Azure Portal</a></li>
+                            <li>Navigate to: <strong>Azure Active Directory</strong> → <strong>App registrations</strong></li>
+                            <li>Find app with ID: <code>3e847995-c69c-4dc4-9246-21ad3fa3d76c</code></li>
+                            <li>Click <strong>"API permissions"</strong> → <strong>"Add a permission"</strong></li>
+                            <li>Select <strong>"Microsoft Graph"</strong> → <strong>"Delegated permissions"</strong></li>
+                            <li>Search for and add:
+                                <ul>
+                                    <li><code>Application.ReadWrite.All</code></li>
+                                    <li><code>Directory.ReadWrite.All</code></li>
+                                    <li><code>ExternalConnection.ReadWrite.All</code></li>
+                                    <li><code>ExternalItem.ReadWrite.All</code></li>
+                                </ul>
+                            </li>
+                            <li>Click the <strong>"Grant admin consent"</strong> button</li>
+                            <li>Refresh this page and try again</li>
+                        </ol>
+                        
+                        <div class="mt-3">
+                            <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/3e847995-c69c-4dc4-9246-21ad3fa3d76c" 
+                               target="_blank" 
+                               class="btn btn-primary">
+                                <i class="bi bi-box-arrow-up-right"></i> Configure Permissions in Azure Portal
+                            </a>
+                        </div>
+                    </div>
+                }
+
+                @* Incremental Consent Alert - New functionality *@
+                @if (_errorMessage.Contains("Insufficient permissions") || _errorMessage.Contains("MsalUiRequiredException"))
+                {
+                    <div class="alert alert-info" role="alert">
+                        <h5><i class="bi bi-info-circle"></i> Incremental Consent Required</h5>
+                        <p><strong>We've recently added External Connection permissions to this application.</strong></p>
+                        <p>Since you're already signed in, you need to provide incremental consent for the new permissions:</p>
+                        
+                        <div class="d-flex gap-2 mt-3">
+                            <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-warning">
+                                <i class="bi bi-box-arrow-right"></i> Sign Out & Sign In Again
+                            </a>
+                            <span class="text-muted align-self-center">This will trigger consent for the new External Connection permissions</span>
+                        </div>
+                    </div>
+                }
+                else if (_errorMessage.Contains("Insufficient privileges") || _errorMessage.Contains("Application Developer"))
+                {
+                    <div class="alert alert-info" role="alert">
+                        <h5><i class="bi bi-info-circle"></i> Permission Requirements</h5>
+                        <p><strong>To create app registrations, you need one of these Azure AD roles:</strong></p>
+                        <ul>
+                            <li><strong>Application Developer</strong> - Can create and manage applications</li>
+                            <li><strong>Cloud Application Administrator</strong> - Full application management</li>
+                            <li><strong>Global Administrator</strong> - All permissions</li>
+                        </ul>
+                        
+                        <hr>
+                        
+                        <h6><i class="bi bi-gear"></i> Solutions:</h6>
+                        <ol>
+                            <li><strong>Contact your Azure AD Administrator</strong> to assign you one of the required roles</li>
+                            <li><strong>Use Azure CLI Bootstrap</strong> if you have sufficient permissions via Azure CLI:
+                                <ul>
+                                    <li>Install Azure CLI if not already installed</li>
+                                    <li>Run <code>az login</code> in a terminal</li>
+                                    <li>Click the "🚀 Auto-Setup with Azure CLI" button above</li>
+                                </ul>
+                            </li>
+                            <li><strong>Ask an administrator</strong> to create the app registration manually and provide you with the Application ID and Client Secret</li>
+                        </ol>
+                        
+                        <div class="alert alert-warning mt-2" role="alert">
+                            <small><strong>Note:</strong> These permissions are required because this application needs to create app registrations with Microsoft Graph API permissions for Copilot connectors.</small>
+                        </div>
+                    </div>
+                }
             }
 
             @if (!string.IsNullOrEmpty(_successMessage))
@@ -244,6 +329,14 @@
                                                 </button>
                                             </div>
                                         </div>
+
+                                        <div class="alert alert-info">
+                                            <h6><i class="bi bi-exclamation-triangle"></i> Admin Consent Required</h6>
+                                            <p class="mb-2">To use this app registration, an administrator needs to grant consent to the required permissions.</p>
+                                            <button class="btn btn-primary btn-sm" @onclick="() => OpenAdminConsentUrl(_appRegistrationResult.ApplicationId, _appRegistrationResult.TenantId)">
+                                                <i class="bi bi-shield-check"></i> Grant Admin Consent
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="col-md-6">
@@ -343,14 +436,14 @@
         </div>
     </div>
 
-    @if (_showWebTerminal)
+    @* @if (_showWebTerminal)
     {
         <div class="row mt-4">
             <div class="col-12">
                 <WebTerminal SessionId="@_terminalSessionId" OnClose="CloseWebTerminal" />
             </div>
         </div>
-    }
+    } *@
 </div>
 
 @code {
@@ -793,6 +886,20 @@
         _successMessage = string.Empty;
         _showSecret = false;
         StateHasChanged();
+    }
+
+    private async Task OpenAdminConsentUrl(string clientId, string tenantId)
+    {
+        try
+        {
+            var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId);
+            await JSRuntime.InvokeVoidAsync("window.open", consentUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to open admin consent URL: {ex.Message}";
+            StateHasChanged();
+        }
     }
 
     private enum SetupStep

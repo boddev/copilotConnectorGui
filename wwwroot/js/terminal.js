@@ -1,13 +1,15 @@
 window.terminalConnections = {};
 
 window.initializeTerminal = (sessionId, dotNetRef) => {
+    console.log('Initializing terminal with sessionId:', sessionId);
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/terminal?sessionId=${sessionId}`;
+    console.log('Connecting to WebSocket URL:', wsUrl);
     
     const socket = new WebSocket(wsUrl);
     
     socket.onopen = () => {
-        console.log(`Terminal ${sessionId} connected`);
+        console.log(`Terminal ${sessionId} connected successfully`);
     };
     
     socket.onmessage = (event) => {
@@ -17,8 +19,8 @@ window.initializeTerminal = (sessionId, dotNetRef) => {
         dotNetRef.invokeMethodAsync('OnTerminalMessage', event.data);
     };
     
-    socket.onclose = () => {
-        console.log(`Terminal ${sessionId} disconnected`);
+    socket.onclose = (event) => {
+        console.log(`Terminal ${sessionId} disconnected. Code: ${event.code}, Reason: ${event.reason}`);
         delete window.terminalConnections[sessionId];
     };
     
@@ -31,6 +33,8 @@ window.initializeTerminal = (sessionId, dotNetRef) => {
         socket: socket,
         dotNetRef: dotNetRef
     };
+    
+    console.log('Terminal connection stored:', window.terminalConnections[sessionId]);
 };
 
 window.sendTerminalCommand = (sessionId, command) => {
