@@ -39,7 +39,8 @@ namespace CopilotConnectorGui.Services
                             "http://localhost:5000/",
                             "https://localhost:5001/",
                             "http://localhost:7265/",
-                            "https://localhost:7266/"
+                            "https://localhost:7266/",
+                            "http://localhost:5000/consent-complete"
                         }
                     },
                     requiredResourceAccess = new[]
@@ -122,7 +123,8 @@ namespace CopilotConnectorGui.Services
                             "http://localhost:5000/",
                             "https://localhost:5001/",
                             "http://localhost:7265/",
-                            "https://localhost:7266/"
+                            "https://localhost:7266/",
+                            "http://localhost:5000/consent-complete"
                         }
                     },
                     RequiredResourceAccess = new List<RequiredResourceAccess>
@@ -300,7 +302,8 @@ namespace CopilotConnectorGui.Services
         {
             if (string.IsNullOrEmpty(redirectUri))
             {
-                redirectUri = "http://localhost:5000/";
+                // Default to consent completion page instead of home page
+                redirectUri = "http://localhost:5000/consent-complete";
             }
 
             var consentUrl = $"https://login.microsoftonline.com/{tenantId}/adminconsent?" +

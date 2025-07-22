@@ -301,6 +301,10 @@
                                             {
                                                 <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
                                             }
+                                            else if (_currentStep == SetupStep.CreatingConnection)
+                                            {
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                            }
                                             else if (_currentStep > SetupStep.AdminConsentRequired)
                                             {
                                                 <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
@@ -317,6 +321,10 @@
                                         @if (_currentStep == SetupStep.Completed)
                                         {
                                             <span class="badge bg-success">Complete</span>
+                                        }
+                                        else if (_currentStep == SetupStep.CreatingConnection)
+                                        {
+                                            <span class="badge bg-primary">In Progress</span>
                                         }
                                         else if (_currentStep > SetupStep.AdminConsentRequired)
                                         {
@@ -728,19 +736,22 @@
                                             </div>
                                         </div>
 
-                                        <div class="alert alert-info">
-                                            <h6><i class="bi bi-exclamation-triangle"></i> Admin Consent Required</h6>
-                                            <p class="mb-2">To use this app registration, an administrator needs to grant consent to the required permissions.</p>
-                                            <button class="btn btn-primary btn-sm" @onclick="() => OpenAdminConsentUrl(_appRegistrationResult.ApplicationId, _appRegistrationResult.TenantId)">
-                                                <i class="bi bi-shield-check"></i> Grant Admin Consent
-                                            </button>
-                                        </div>
                                     </div>
 
                                     <div class="col-md-6">
                                         <h5>Connection Details</h5>
                                         @if (_schemaResult != null)
                                         {
+                                            <div class="mb-3">
+                                                <label class="form-label">Connection Name</label>
+                                                <div class="input-group">
+                                                    <input type="text" class="form-control" value="@_configuration.ConnectionName" readonly />
+                                                    <button class="btn btn-outline-secondary" type="button" @onclick="() => CopyToClipboard(_configuration.ConnectionName)">
+                                                        Copy
+                                                    </button>
+                                                </div>
+                                            </div>
+
                                             <div class="mb-3">
                                                 <label class="form-label">Connection ID</label>
                                                 <div class="input-group">
@@ -1485,6 +1496,7 @@
         Configuration,
         AppRegistrationCreated,
         AdminConsentRequired,
+        CreatingConnection,
         Completed
     }
 
@@ -1501,6 +1513,7 @@
         {
             _isProcessing = true;
             _currentRetryCount = 0;
+            _currentStep = SetupStep.CreatingConnection; // Set to CreatingConnection step
             StartProcessTimer();
             LogActivity("Starting connection creation process", ActivityLogType.Info);
             StateHasChanged();
@@ -1601,7 +1614,7 @@
     {
         try
         {
-            var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId, "http://localhost:5000/");
+            var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId, "http://localhost:5000/consent-complete");
             await JSRuntime.InvokeVoidAsync("window.open", consentUrl, "_blank");
         }
         catch (Exception ex)
@@ -1615,11 +1628,12 @@
     {
         return _currentStep switch
         {
-            SetupStep.Configuration => "25%",
-            SetupStep.AppRegistrationCreated => "50%",
-            SetupStep.AdminConsentRequired => "75%",
+            SetupStep.Configuration => "20%",
+            SetupStep.AppRegistrationCreated => "40%",
+            SetupStep.AdminConsentRequired => "60%",
+            SetupStep.CreatingConnection => "80%",
             SetupStep.Completed => "100%",
-            _ => "25%"
+            _ => "20%"
         };
     }
 
@@ -1627,11 +1641,12 @@
     {
         return _currentStep switch
         {
-            SetupStep.Configuration => 25,
-            SetupStep.AppRegistrationCreated => 50,
-            SetupStep.AdminConsentRequired => 75,
+            SetupStep.Configuration => 20,
+            SetupStep.AppRegistrationCreated => 40,
+            SetupStep.AdminConsentRequired => 60,
+            SetupStep.CreatingConnection => 80,
             SetupStep.Completed => 100,
-            _ => 25
+            _ => 20
         };
     }
 
