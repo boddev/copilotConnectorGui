@@ -1,6 +1,5 @@
 @page "/"
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
@@ -8,6 +7,8 @@
 @using CopilotConnectorGui.Services
 @using CopilotConnectorGui.Models
 @using System.Security.Claims
+@using Microsoft.AspNetCore.Components
+@implements IDisposable
 @attribute [Authorize]
 @inject AppRegistrationService AppRegistrationService
 @inject SchemaService SchemaService
@@ -151,40 +152,248 @@
             @if (_forceShowUI && _isProcessing)
             {
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header d-flex justify-content-between align-items-center">
                         <h3>Processing External Connection Setup</h3>
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <small class="text-muted">Active</small>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <div class="alert alert-info">
-                            <strong>Please wait...</strong><br />
-                            @if (!string.IsNullOrEmpty(_statusMessage))
-                            {
-                                <div class="mt-2">
-                                    <i class="bi bi-arrow-right"></i> @_statusMessage
+                        @* Current Status Alert *@
+                        <div class="alert alert-info d-flex align-items-center">
+                            <div class="flex-grow-1">
+                                <strong>Current Status:</strong><br />
+                                @if (!string.IsNullOrEmpty(_statusMessage))
+                                {
+                                    <div class="mt-1">
+                                        <i class="bi bi-arrow-right text-primary"></i> @_statusMessage
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="mt-1">
+                                        <i class="bi bi-arrow-right text-primary"></i> Creating your External Connection...
+                                    </div>
+                                }
+                            </div>
+                            <div class="ms-3">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Processing...</span>
                                 </div>
-                            }
-                            else
-                            {
-                                <div class="mt-2">
-                                    <i class="bi bi-arrow-right"></i> Creating your External Connection...
-                                </div>
-                            }
+                            </div>
                         </div>
                         
-                        <div class="progress mb-3">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                                 role="progressbar" 
-                                 style="width: @GetProgressWidth()" 
-                                 aria-valuenow="@GetProgressValue()" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">
+                        @* Progress Steps *@
+                        <div class="mb-4">
+                            <h6 class="mb-3">Setup Progress</h6>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     style="width: @GetProgressWidth()" 
+                                     aria-valuenow="@GetProgressValue()" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">
+                                </div>
+                            </div>
+                            <small class="text-muted">@GetProgressValue()% Complete</small>
+                        </div>
+
+                        @* Detailed Progress Steps *@
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="mb-3">Process Steps</h6>
+                                <div class="list-group">
+                                    <div class="list-group-item d-flex align-items-center @(_currentStep >= SetupStep.Configuration ? "list-group-item-success" : "")">
+                                        <div class="me-3">
+                                            @if (_currentStep > SetupStep.Configuration)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else
+                                            {
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>1. Configuration Validation</strong>
+                                            <div class="text-muted small">Validating tenant settings and JSON schema</div>
+                                        </div>
+                                        @if (_currentStep > SetupStep.Configuration)
+                                        {
+                                            <span class="badge bg-success">Complete</span>
+                                        }
+                                        else if (_currentStep == SetupStep.Configuration)
+                                        {
+                                            <span class="badge bg-primary">In Progress</span>
+                                        }
+                                    </div>
+                                    
+                                    <div class="list-group-item d-flex align-items-center @(_currentStep >= SetupStep.AppRegistrationCreated ? "list-group-item-success" : "")">
+                                        <div class="me-3">
+                                            @if (_currentStep > SetupStep.AppRegistrationCreated)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else if (_currentStep == SetupStep.AppRegistrationCreated)
+                                            {
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-circle text-muted" style="font-size: 1.2rem;"></i>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>2. App Registration Creation</strong>
+                                            <div class="text-muted small">Creating Azure AD application with required permissions</div>
+                                        </div>
+                                        @if (_currentStep > SetupStep.AppRegistrationCreated)
+                                        {
+                                            <span class="badge bg-success">Complete</span>
+                                        }
+                                        else if (_currentStep == SetupStep.AppRegistrationCreated)
+                                        {
+                                            <span class="badge bg-primary">In Progress</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Pending</span>
+                                        }
+                                    </div>
+                                    
+                                    <div class="list-group-item d-flex align-items-center @(_currentStep >= SetupStep.AdminConsentRequired ? "list-group-item-warning" : "")">
+                                        <div class="me-3">
+                                            @if (_currentStep > SetupStep.AdminConsentRequired)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else if (_currentStep == SetupStep.AdminConsentRequired)
+                                            {
+                                                <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-circle text-muted" style="font-size: 1.2rem;"></i>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>3. Permission Consent</strong>
+                                            <div class="text-muted small">Administrator consent for External Connection permissions</div>
+                                        </div>
+                                        @if (_currentStep > SetupStep.AdminConsentRequired)
+                                        {
+                                            <span class="badge bg-success">Complete</span>
+                                        }
+                                        else if (_currentStep == SetupStep.AdminConsentRequired)
+                                        {
+                                            <span class="badge bg-warning">Action Required</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Pending</span>
+                                        }
+                                    </div>
+                                    
+                                    <div class="list-group-item d-flex align-items-center @(_currentStep == SetupStep.Completed ? "list-group-item-success" : "")">
+                                        <div class="me-3">
+                                            @if (_currentStep == SetupStep.Completed)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success" style="font-size: 1.2rem;"></i>
+                                            }
+                                            else if (_currentStep > SetupStep.AdminConsentRequired)
+                                            {
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-circle text-muted" style="font-size: 1.2rem;"></i>
+                                            }
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <strong>4. Connection & Schema Creation</strong>
+                                            <div class="text-muted small">Creating External Connection and defining data schema</div>
+                                        </div>
+                                        @if (_currentStep == SetupStep.Completed)
+                                        {
+                                            <span class="badge bg-success">Complete</span>
+                                        }
+                                        else if (_currentStep > SetupStep.AdminConsentRequired)
+                                        {
+                                            <span class="badge bg-primary">In Progress</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Pending</span>
+                                        }
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="text-center">
-                            <i class="bi bi-gear-fill fa-spin" style="font-size: 3rem; color: #0078d4;"></i>
-                            <p class="mt-2 text-muted">Setting up your connection... This may take several minutes.</p>
-                            <small class="text-muted">Please keep this page open while processing completes.</small>
+                        @* Real-time Activity Log *@
+                        <div class="mb-3">
+                            <h6 class="mb-2">Activity Log</h6>
+                            <div class="bg-light p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                                @foreach (var logEntry in _activityLog.TakeLast(10))
+                                {
+                                    <div class="d-flex align-items-start mb-2">
+                                        <small class="text-muted me-2" style="min-width: 60px;">@logEntry.Timestamp.ToString("HH:mm:ss")</small>
+                                        <div class="me-2">
+                                            @if (logEntry.Type == ActivityLogType.Success)
+                                            {
+                                                <i class="bi bi-check-circle-fill text-success"></i>
+                                            }
+                                            else if (logEntry.Type == ActivityLogType.Warning)
+                                            {
+                                                <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                                            }
+                                            else if (logEntry.Type == ActivityLogType.Error)
+                                            {
+                                                <i class="bi bi-x-circle-fill text-danger"></i>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-info-circle-fill text-primary"></i>
+                                            }
+                                        </div>
+                                        <small class="flex-grow-1">@logEntry.Message</small>
+                                    </div>
+                                }
+                                @if (!_activityLog.Any())
+                                {
+                                    <small class="text-muted">Waiting for activity...</small>
+                                }
+                            </div>
+                        </div>
+
+                        @* Time and Performance Info *@
+                        <div class="row text-center">
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <strong class="text-primary">@_elapsedTime</strong><br />
+                                    <small class="text-muted">Elapsed Time</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <strong class="text-info">@_currentRetryCount/@_maxRetries</strong><br />
+                                    <small class="text-muted">Retry Attempts</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="border rounded p-2">
+                                    <strong class="text-success">Active</strong><br />
+                                    <small class="text-muted">Connection Status</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-3">
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle"></i>
+                                This process may take several minutes. The page will update automatically.
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -636,7 +845,31 @@
     } *@
 </div>
 
+@* Activity Log Support Classes *@
 @code {
+    public enum ActivityLogType
+    {
+        Info,
+        Success,
+        Warning,
+        Error
+    }
+
+    public class ActivityLogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public ActivityLogType Type { get; set; }
+    }
+
+    // Activity Log Support
+    private List<ActivityLogEntry> _activityLog = new();
+    private Timer? _uiUpdateTimer;
+    private DateTime _processStartTime;
+    private string _elapsedTime = "00:00";
+    private int _currentRetryCount = 0;
+    private int _maxRetries = 5;
+
     private TenantConfigurationModel _configuration = new();
     private AppRegistrationResult? _appRegistrationResult;
     private SchemaCreationResult? _schemaResult;
@@ -1260,41 +1493,106 @@
         if (_appRegistrationResult == null)
         {
             _errorMessage = "App registration information is missing.";
+            LogActivity("Failed: App registration information is missing", ActivityLogType.Error);
             return;
         }
 
         try
         {
             _isProcessing = true;
+            _currentRetryCount = 0;
+            StartProcessTimer();
+            LogActivity("Starting connection creation process", ActivityLogType.Info);
             StateHasChanged();
 
-            // Step 3: Create Schema and Connection (continuing from where we left off)
-            _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
-                _configuration.TenantId,
-                _appRegistrationResult.ApplicationId,
-                _appRegistrationResult.ClientSecret,
-                _configuration.JsonSample,
-                _configuration.ConnectionName,
-                _configuration.ConnectionDescription);
-
-            if (!_schemaResult.Success)
+            // Step 3: Create Schema and Connection with retry logic
+            const int maxRetries = 5;
+            _maxRetries = maxRetries;
+            Exception? lastException = null;
+            
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection after admin consent.";
-                _isProcessing = false;
-                StateHasChanged();
-                return;
+                try
+                {
+                    _currentRetryCount = attempt;
+                    _statusMessage = $"Creating connection... (Attempt {attempt} of {maxRetries})";
+                    LogActivity($"Attempt {attempt} of {maxRetries}: Creating external connection", ActivityLogType.Info);
+                    StateHasChanged();
+
+                    _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
+                        _configuration.TenantId,
+                        _appRegistrationResult.ApplicationId,
+                        _appRegistrationResult.ClientSecret,
+                        _configuration.JsonSample,
+                        _configuration.ConnectionName,
+                        _configuration.ConnectionDescription);
+
+                    if (_schemaResult.Success)
+                    {
+                        _currentStep = SetupStep.Completed;
+                        _successMessage = "Setup completed successfully! Your external connection is ready to use.";
+                        _statusMessage = string.Empty;
+                        LogActivity("Connection created successfully!", ActivityLogType.Success);
+                        StopProcessTimer();
+                        return;
+                    }
+                    else if (attempt < maxRetries)
+                    {
+                        // Log the error but continue retrying
+                        lastException = new Exception(_schemaResult.ErrorMessage ?? "Unknown error");
+                        LogActivity($"Attempt {attempt} failed: {_schemaResult.ErrorMessage}", ActivityLogType.Warning);
+                        
+                        // Exponential backoff: 2^attempt seconds (2, 4, 8, 16 seconds)
+                        var delaySeconds = Math.Pow(2, attempt);
+                        _statusMessage = $"Attempt {attempt} failed. Retrying in {delaySeconds} seconds...";
+                        LogActivity($"Waiting {delaySeconds} seconds before retry", ActivityLogType.Info);
+                        StateHasChanged();
+                        
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    }
+                    else
+                    {
+                        // Final attempt failed
+                        _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection after admin consent.";
+                        LogActivity($"Final attempt failed: {_schemaResult.ErrorMessage}", ActivityLogType.Error);
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    LogActivity($"Attempt {attempt} failed with exception: {ex.Message}", ActivityLogType.Warning);
+                    
+                    if (attempt < maxRetries)
+                    {
+                        // Exponential backoff: 2^attempt seconds (2, 4, 8, 16 seconds)
+                        var delaySeconds = Math.Pow(2, attempt);
+                        _statusMessage = $"Attempt {attempt} failed with error. Retrying in {delaySeconds} seconds...";
+                        LogActivity($"Waiting {delaySeconds} seconds before retry", ActivityLogType.Info);
+                        StateHasChanged();
+                        
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                    }
+                }
             }
 
-            _currentStep = SetupStep.Completed;
-            _successMessage = "Setup completed successfully! Your external connection is ready to use.";
+            // If we get here, all retries failed
+            if (lastException != null)
+            {
+                _errorMessage = $"Failed after {maxRetries} attempts. Last error: {lastException.Message}";
+                LogActivity($"All {maxRetries} attempts failed. Process stopped.", ActivityLogType.Error);
+            }
         }
         catch (Exception ex)
         {
-            _errorMessage = $"An error occurred after admin consent: {ex.Message}";
+            _errorMessage = $"An unexpected error occurred after admin consent: {ex.Message}";
+            LogActivity($"Unexpected error: {ex.Message}", ActivityLogType.Error);
         }
         finally
         {
             _isProcessing = false;
+            _statusMessage = string.Empty;
+            StopProcessTimer();
             StateHasChanged();
         }
     }
@@ -1335,5 +1633,51 @@
             SetupStep.Completed => 100,
             _ => 25
         };
+    }
+
+    // Activity Log and Timer Methods
+    private void LogActivity(string message, ActivityLogType type = ActivityLogType.Info)
+    {
+        _activityLog.Add(new ActivityLogEntry
+        {
+            Timestamp = DateTime.Now,
+            Message = message,
+            Type = type
+        });
+
+        // Keep only the last 50 entries to avoid memory issues
+        if (_activityLog.Count > 50)
+        {
+            _activityLog.RemoveRange(0, _activityLog.Count - 50);
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void StartProcessTimer()
+    {
+        _processStartTime = DateTime.Now;
+        _uiUpdateTimer?.Dispose();
+        
+        _uiUpdateTimer = new Timer(async _ =>
+        {
+            var elapsed = DateTime.Now - _processStartTime;
+            _elapsedTime = elapsed.ToString(@"mm\:ss");
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+
+        LogActivity("Process timer started", ActivityLogType.Info);
+    }
+
+    private void StopProcessTimer()
+    {
+        _uiUpdateTimer?.Dispose();
+        _uiUpdateTimer = null;
+        LogActivity("Process timer stopped", ActivityLogType.Info);
+    }
+
+    public void Dispose()
+    {
+        _uiUpdateTimer?.Dispose();
     }
 }
