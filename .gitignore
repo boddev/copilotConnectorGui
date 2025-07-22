@@ -389,3 +389,5 @@ FodyWeavers.xsd
 appsettings.json
 bin/*.*
 obj/*.*
+obj/Debug/net9.0/apphost.exe
+obj/Debug/net9.0/CopilotConnectorGui.assets.cache

@@ -203,39 +203,23 @@
                                 <i class="bi bi-shield-lock" style="font-size: 3rem; color: #0078d4;"></i>
                             </div>
                             <h4>Sign in to Your Microsoft Entra ID Tenant</h4>
-                            <p class="lead">To create app registrations and external connections, you need to sign in with an account that has administrator privileges in your Azure AD tenant.</p>
+                            <p class="lead">Please sign in with your Microsoft account to continue.</p>
                             
-                            <div class="alert alert-info">
-                                <strong>Required Permissions:</strong>
-                                <ul class="list-unstyled mb-0">
-                                    <li>• Application Administrator or Global Administrator role</li>
-                                    <li>• Ability to grant admin consent to applications</li>
-                                    <li>• Access to Microsoft Graph APIs</li>
-                                </ul>
-                            </div>
-
-                            <div class="alert alert-success">
-                                <strong>🚀 One-Click Bootstrap Available!</strong> 
-                                If you have Azure CLI installed and are logged in, you can automatically create 
-                                the initial app registration and configure SSO with one click.
-                            </div>
-
-                            <div class="alert alert-info">
-                                <strong>Single Sign-On (SSO):</strong> If you're already signed in to Office 365, Azure Portal, or other Microsoft services, 
-                                click "Try Auto Sign-in" to use your existing session. For first-time setup or if SSO fails, use "Sign in with Microsoft" below.
-                            </div>
-
-                            <div class="alert alert-warning">
-                                <strong>Note:</strong> This application creates its own app registrations, so the first sign-in must be done manually 
-                                to establish the proper authentication configuration.
-                            </div>
-
-                            <div class="alert alert-info">
-                                <strong>Alternative Option:</strong> If you don't have an existing app registration, you can use Azure CLI authentication instead. 
-                                Make sure you have Azure CLI installed and run <code>az login</code> before using this option.
+                            <div class="alert alert-primary">
+                                <h6><i class="bi bi-info-circle"></i> What This Application Does</h6>
+                                <p class="mb-0">This application helps you create <strong>Microsoft Copilot Connectors</strong> for Microsoft Copilot. 
+                                It automatically sets up the required Azure app registrations, configures permissions, and creates the connection schema 
+                                so you can integrate your external data sources with Microsoft 365 search and Copilot experiences.</p>
                             </div>
                             
-                            <div class="d-grid gap-2">
+                            <div class="d-grid gap-2" style="max-width: 300px; margin: 0 auto;">
+                                <a href="MicrosoftIdentity/Account/SignIn" class="btn btn-primary btn-lg">
+                                    <i class="bi bi-microsoft"></i> Sign in with Microsoft
+                                </a>
+                            </div>
+
+                            @* Hidden buttons - keeping functionality but hiding from UI *@
+                            <div style="display: none;">
                                 <button type="button" class="btn btn-success btn-lg" @onclick="PerformBootstrap" disabled="@_isProcessing">
                                     @if (_isBootstrapping)
                                     {
@@ -247,12 +231,6 @@
                                         <i class="bi bi-magic"></i> <text>🚀 Auto-Setup with Azure CLI</text>
                                     }
                                 </button>
-                                <div class="text-center my-2">
-                                    <small class="text-muted">-- OR --</small>
-                                </div>
-                                <a href="MicrosoftIdentity/Account/SignIn" class="btn btn-primary btn-lg">
-                                    <i class="bi bi-microsoft"></i> Sign in with Microsoft
-                                </a>
                                 <button type="button" class="btn btn-outline-primary btn-lg" @onclick="ManualAutoLogin" disabled="@_isProcessing">
                                     @if (_isProcessing && !_isBootstrapping)
                                     {
@@ -334,7 +312,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="alert alert-info">
+                                    <div class="alert alert-info" style="display: none;">
                                         <h6><i class="bi bi-info-circle"></i> Choose Your Setup Method:</h6>
                                         <div class="row">
                                             <div class="col-md-6">
@@ -371,7 +349,8 @@
                                             }
                                         </button>
                                         
-                                        <button type="button" class="btn btn-success" @onclick="HandleSimplifiedConfiguration" disabled="@_isProcessing">
+                                        @* Hidden Quick Setup button - keeping functionality *@
+                                        <button type="button" class="btn btn-success" @onclick="HandleSimplifiedConfiguration" disabled="@_isProcessing" style="display: none;">
                                             @if (_isProcessing)
                                             {
                                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
