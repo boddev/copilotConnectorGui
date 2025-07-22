@@ -22,32 +22,7 @@ namespace CopilotConnectorGui.Services
         {
             try
             {
-                // Check user permissions first
-                var hasPermissions = await _graphService.CheckUserPermissionsAsync(user);
-                if (!hasPermissions)
-                {
-                    return new AppRegistrationResult
-                    {
-                        Success = false,
-                        ErrorMessage = "Insufficient permissions. This could be due to:\n" +
-                                     "1. Your user account lacks the required Azure AD role (Application Developer, Cloud Application Administrator, or Global Administrator)\n" +
-                                     "2. This application needs admin consent for Microsoft Graph permissions\n" +
-                                     "3. The current app registration needs proper delegated permissions configured\n\n" +
-                                     "Required delegated permissions for this app:\n" +
-                                     "• Application.ReadWrite.All\n" +
-                                     "• Directory.ReadWrite.All\n\n" +
-                                     "TO FIX THIS:\n" +
-                                     "1. Go to Azure Portal: https://portal.azure.com\n" +
-                                     "2. Navigate to: Azure Active Directory > App registrations\n" +
-                                     "3. Find app: 3e847995-c69c-4dc4-9246-21ad3fa3d76c\n" +
-                                     "4. Click 'API permissions' > 'Add a permission'\n" +
-                                     "5. Select 'Microsoft Graph' > 'Delegated permissions'\n" +
-                                     "6. Add: Application.ReadWrite.All and Directory.ReadWrite.All\n" +
-                                     "7. Click 'Grant admin consent' button\n" +
-                                     "8. Refresh this page and try again\n\n" +
-                                     "Direct link: https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/3e847995-c69c-4dc4-9246-21ad3fa3d76c"
-                    };
-                }
+                _logger.LogInformation("Creating app registration for tenant: {TenantId}", tenantId);
 
                 // Use HttpClient approach since Graph SDK is having issues
                 using var httpClient = await _graphService.GetAuthenticatedHttpClientAsync(user);
@@ -57,6 +32,16 @@ namespace CopilotConnectorGui.Services
                 {
                     displayName = $"Copilot Connector - {DateTime.UtcNow:yyyyMMdd-HHmmss}",
                     signInAudience = "AzureADMyOrg",
+                    web = new
+                    {
+                        redirectUris = new[]
+                        {
+                            "http://localhost:5000/",
+                            "https://localhost:5001/",
+                            "http://localhost:7265/",
+                            "https://localhost:7266/"
+                        }
+                    },
                     requiredResourceAccess = new[]
                     {
                         new
@@ -66,40 +51,38 @@ namespace CopilotConnectorGui.Services
                             {
                                 new
                                 {
-                                    id = "8116ae0f-55c2-452d-9944-d18420f5b2c8", // ExternalConnection.ReadWrite.OwnedBy
+                                    id = "34c37bc0-2b40-4d5e-85e1-2365cd256d79", // ExternalConnection.ReadWrite.OwnedBy (Application)
                                     type = "Role"
                                 },
                                 new
                                 {
-                                    id = "38c3d6ee-69ee-422f-b954-e17819665354", // ExternalItem.ReadWrite.OwnedBy
+                                    id = "8116ae0f-55c2-452d-9944-d18420f5b2c8", // ExternalItem.ReadWrite.OwnedBy (Application)
                                     type = "Role"
-                                },
-                                new
-                                {
-                                    id = "f431331c-49a6-499f-be1c-62af19c34a9d", // ExternalConnection.ReadWrite.All (Delegated)
-                                    type = "Scope"
-                                },
-                                new
-                                {
-                                    id = "34c37bc0-2b40-4d5e-85e1-2365cd256d79", // ExternalItem.ReadWrite.All (Delegated)  
-                                    type = "Scope"
-                                },
-                                new
-                                {
-                                    id = "19dbc75e-c2e2-444c-a770-ec69d8559fc7", // Directory.ReadWrite.All (Delegated)
-                                    type = "Scope"
-                                },
-                                new
-                                {
-                                    id = "1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9", // Application.ReadWrite.All (Delegated)
-                                    type = "Scope"
                                 }
                             }
                         }
                     }
                 };
 
-                return await CreateAppRegistrationInternalAsync(httpClient, appRegistration, tenantId);
+                var result = await CreateAppRegistrationInternalAsync(httpClient, appRegistration, tenantId);
+                
+                // If app creation succeeded, try to grant admin consent using the authenticated user's context
+                if (result.Success)
+                {
+                    try
+                    {
+                        _logger.LogInformation("Attempting to grant admin consent for app: {AppId}", result.ApplicationId);
+                        await GrantAdminConsentWithUserContextAsync(user, result.ApplicationId!, tenantId);
+                        _logger.LogInformation("Admin consent granted successfully using user context");
+                    }
+                    catch (Exception consentEx)
+                    {
+                        _logger.LogWarning(consentEx, "Could not automatically grant admin consent using user context. Manual consent may be required.");
+                        // Don't fail the entire operation - just log the warning
+                    }
+                }
+                
+                return result;
             }
             catch (Exception ex)
             {
@@ -132,6 +115,16 @@ namespace CopilotConnectorGui.Services
                 {
                     DisplayName = $"Copilot Connector - {DateTime.UtcNow:yyyyMMdd-HHmmss}",
                     SignInAudience = "AzureADMyOrg",
+                    Web = new Microsoft.Graph.Models.WebApplication
+                    {
+                        RedirectUris = new List<string>
+                        {
+                            "http://localhost:5000/",
+                            "https://localhost:5001/",
+                            "http://localhost:7265/",
+                            "https://localhost:7266/"
+                        }
+                    },
                     RequiredResourceAccess = new List<RequiredResourceAccess>
                     {
                         new RequiredResourceAccess
@@ -141,33 +134,13 @@ namespace CopilotConnectorGui.Services
                             {
                                 new ResourceAccess
                                 {
-                                    Id = Guid.Parse("8116ae0f-55c2-452d-9944-d18420f5b2c8"), // ExternalConnection.ReadWrite.OwnedBy (Application)
+                                    Id = Guid.Parse("34c37bc0-2b40-4d5e-85e1-2365cd256d79"), // ExternalConnection.ReadWrite.OwnedBy (Application)
                                     Type = "Role"
                                 },
                                 new ResourceAccess
                                 {
-                                    Id = Guid.Parse("38c3d6ee-69ee-422f-b954-e17819665354"), // ExternalItem.ReadWrite.OwnedBy (Application)
+                                    Id = Guid.Parse("8116ae0f-55c2-452d-9944-d18420f5b2c8"), // ExternalItem.ReadWrite.OwnedBy (Application)
                                     Type = "Role"
-                                },
-                                new ResourceAccess
-                                {
-                                    Id = Guid.Parse("f431331c-49a6-499f-be1c-62af19c34a9d"), // ExternalConnection.ReadWrite.All (Delegated)
-                                    Type = "Scope"
-                                },
-                                new ResourceAccess
-                                {
-                                    Id = Guid.Parse("34c37bc0-2b40-4d5e-85e1-2365cd256d79"), // ExternalItem.ReadWrite.All (Delegated)
-                                    Type = "Scope"
-                                },
-                                new ResourceAccess
-                                {
-                                    Id = Guid.Parse("19dbc75e-c2e2-444c-a770-ec69d8559fc7"), // Directory.ReadWrite.All (Delegated)
-                                    Type = "Scope"
-                                },
-                                new ResourceAccess
-                                {
-                                    Id = Guid.Parse("1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9"), // Application.ReadWrite.All (Delegated)
-                                    Type = "Scope"
                                 }
                             }
                         }
@@ -196,6 +169,19 @@ namespace CopilotConnectorGui.Services
                 if (secretResult?.SecretText == null)
                 {
                     throw new InvalidOperationException("Failed to create client secret");
+                }
+
+                // Try to grant admin consent automatically
+                try
+                {
+                    _logger.LogInformation("Attempting to grant admin consent for app: {AppId}", createdApp.AppId);
+                    await GrantAdminConsentAsync(graphClient, createdApp.AppId, tenantId);
+                    _logger.LogInformation("Admin consent granted successfully");
+                }
+                catch (Exception consentEx)
+                {
+                    _logger.LogWarning(consentEx, "Could not automatically grant admin consent. Manual consent may be required.");
+                    // Don't fail the entire operation - just log the warning
                 }
 
                 return new AppRegistrationResult
@@ -314,7 +300,7 @@ namespace CopilotConnectorGui.Services
         {
             if (string.IsNullOrEmpty(redirectUri))
             {
-                redirectUri = "https://localhost:7266/";
+                redirectUri = "http://localhost:5000/";
             }
 
             var consentUrl = $"https://login.microsoftonline.com/{tenantId}/adminconsent?" +
@@ -324,6 +310,183 @@ namespace CopilotConnectorGui.Services
 
             _logger.LogInformation("Generated admin consent URL: {ConsentUrl}", consentUrl);
             return consentUrl;
+        }
+
+        private async Task GrantAdminConsentWithUserContextAsync(ClaimsPrincipal user, string applicationId, string tenantId)
+        {
+            try
+            {
+                // Use the authenticated user's context (they're already logged in with sufficient permissions)
+                using var httpClient = await _graphService.GetAuthenticatedHttpClientAsync(user);
+
+                // Get the service principal for the application
+                var servicePrincipalsResponse = await httpClient.GetAsync($"servicePrincipals?$filter=appId eq '{applicationId}'");
+                var servicePrincipalsContent = await servicePrincipalsResponse.Content.ReadAsStringAsync();
+                
+                if (!servicePrincipalsResponse.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException($"Failed to get service principals: {servicePrincipalsContent}");
+                }
+
+                dynamic servicePrincipalsResult = JsonConvert.DeserializeObject(servicePrincipalsContent)!;
+                dynamic? servicePrincipal = null;
+                
+                if (servicePrincipalsResult.value.Count > 0)
+                {
+                    servicePrincipal = servicePrincipalsResult.value[0];
+                }
+                else
+                {
+                    // Create service principal if it doesn't exist
+                    var newServicePrincipal = new { appId = applicationId };
+                    var spJson = JsonConvert.SerializeObject(newServicePrincipal);
+                    var spContent = new StringContent(spJson, System.Text.Encoding.UTF8, "application/json");
+                    
+                    var spResponse = await httpClient.PostAsync("servicePrincipals", spContent);
+                    var spResponseContent = await spResponse.Content.ReadAsStringAsync();
+                    
+                    if (!spResponse.IsSuccessStatusCode)
+                    {
+                        throw new InvalidOperationException($"Failed to create service principal: {spResponseContent}");
+                    }
+                    
+                    servicePrincipal = JsonConvert.DeserializeObject(spResponseContent)!;
+                }
+
+                string servicePrincipalId = servicePrincipal.id;
+
+                // Get Microsoft Graph service principal
+                var graphSpResponse = await httpClient.GetAsync("servicePrincipals?$filter=appId eq '00000003-0000-0000-c000-000000000000'");
+                var graphSpContent = await graphSpResponse.Content.ReadAsStringAsync();
+                
+                if (!graphSpResponse.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException($"Failed to get Microsoft Graph service principal: {graphSpContent}");
+                }
+
+                dynamic graphSpResult = JsonConvert.DeserializeObject(graphSpContent)!;
+                string graphServicePrincipalId = graphSpResult.value[0].id;
+
+                // Grant admin consent for the required permissions
+                var permissionIds = new[]
+                {
+                    "34c37bc0-2b40-4d5e-85e1-2365cd256d79", // ExternalConnection.ReadWrite.OwnedBy
+                    "8116ae0f-55c2-452d-9944-d18420f5b2c8"  // ExternalItem.ReadWrite.OwnedBy
+                };
+
+                foreach (var permissionId in permissionIds)
+                {
+                    try
+                    {
+                        var appRoleAssignment = new
+                        {
+                            appRoleId = permissionId,
+                            principalId = servicePrincipalId,
+                            resourceId = graphServicePrincipalId
+                        };
+
+                        var assignmentJson = JsonConvert.SerializeObject(appRoleAssignment);
+                        var assignmentContent = new StringContent(assignmentJson, System.Text.Encoding.UTF8, "application/json");
+
+                        var assignmentResponse = await httpClient.PostAsync($"servicePrincipals/{servicePrincipalId}/appRoleAssignments", assignmentContent);
+                        
+                        if (assignmentResponse.IsSuccessStatusCode)
+                        {
+                            _logger.LogInformation("Granted permission {PermissionId} to app {AppId}", permissionId, applicationId);
+                        }
+                        else
+                        {
+                            var assignmentError = await assignmentResponse.Content.ReadAsStringAsync();
+                            if (assignmentError.Contains("Permission being assigned already exists"))
+                            {
+                                _logger.LogInformation("Permission {PermissionId} already granted to app {AppId}", permissionId, applicationId);
+                            }
+                            else
+                            {
+                                _logger.LogWarning("Failed to grant permission {PermissionId}: {Error}", permissionId, assignmentError);
+                            }
+                        }
+                    }
+                    catch (Exception ex) when (ex.Message.Contains("Permission being assigned already exists"))
+                    {
+                        _logger.LogInformation("Permission {PermissionId} already granted to app {AppId}", permissionId, applicationId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error granting admin consent for application {AppId} using user context", applicationId);
+                throw;
+            }
+        }
+
+        private async Task GrantAdminConsentAsync(GraphServiceClient graphClient, string applicationId, string tenantId)
+        {
+            try
+            {
+                // Get the service principal for the application
+                var servicePrincipals = await graphClient.ServicePrincipals
+                    .GetAsync(requestConfiguration => requestConfiguration.QueryParameters.Filter = $"appId eq '{applicationId}'");
+
+                var servicePrincipal = servicePrincipals?.Value?.FirstOrDefault();
+                if (servicePrincipal == null)
+                {
+                    // Create service principal if it doesn't exist
+                    var newServicePrincipal = new Microsoft.Graph.Models.ServicePrincipal
+                    {
+                        AppId = applicationId
+                    };
+                    servicePrincipal = await graphClient.ServicePrincipals.PostAsync(newServicePrincipal);
+                }
+
+                if (servicePrincipal?.Id == null)
+                {
+                    throw new InvalidOperationException("Could not create or find service principal");
+                }
+
+                // Grant admin consent for the Microsoft Graph API permissions
+                var graphServicePrincipals = await graphClient.ServicePrincipals
+                    .GetAsync(requestConfiguration => requestConfiguration.QueryParameters.Filter = "appId eq '00000003-0000-0000-c000-000000000000'");
+
+                var graphServicePrincipal = graphServicePrincipals?.Value?.FirstOrDefault();
+                if (graphServicePrincipal?.Id == null)
+                {
+                    throw new InvalidOperationException("Could not find Microsoft Graph service principal");
+                }
+
+                // Create app role assignments for the required permissions
+                var permissionIds = new[]
+                {
+                    "34c37bc0-2b40-4d5e-85e1-2365cd256d79", // ExternalConnection.ReadWrite.OwnedBy
+                    "8116ae0f-55c2-452d-9944-d18420f5b2c8"  // ExternalItem.ReadWrite.OwnedBy
+                };
+
+                foreach (var permissionId in permissionIds)
+                {
+                    try
+                    {
+                        var appRoleAssignment = new Microsoft.Graph.Models.AppRoleAssignment
+                        {
+                            AppRoleId = Guid.Parse(permissionId),
+                            PrincipalId = Guid.Parse(servicePrincipal.Id),
+                            ResourceId = Guid.Parse(graphServicePrincipal.Id)
+                        };
+
+                        await graphClient.ServicePrincipals[servicePrincipal.Id].AppRoleAssignments.PostAsync(appRoleAssignment);
+                        _logger.LogInformation("Granted permission {PermissionId} to app {AppId}", permissionId, applicationId);
+                    }
+                    catch (Exception ex) when (ex.Message.Contains("Permission being assigned already exists"))
+                    {
+                        _logger.LogInformation("Permission {PermissionId} already granted to app {AppId}", permissionId, applicationId);
+                        // This is fine - permission already exists
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error granting admin consent for application {AppId}", applicationId);
+                throw;
+            }
         }
     }
 }
