@@ -6,6 +6,7 @@
 @using Microsoft.JSInterop
 @using CopilotConnectorGui.Services
 @using CopilotConnectorGui.Models
+@using CopilotConnectorGui.Components
 @using System.Security.Claims
 @using Microsoft.AspNetCore.Components
 @implements IDisposable
@@ -13,6 +14,8 @@
 @inject AppRegistrationService AppRegistrationService
 @inject SchemaService SchemaService
 @inject GraphService GraphService
+@inject JsonFieldParserService JsonFieldParserService
+@inject SemanticLabelMappingService SemanticLabelMappingService
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Copilot Connector Setup</PageTitle>
@@ -485,7 +488,7 @@
                                 }
                             </div>
                             <div class="card-body">
-                                <EditForm Model="@_configuration" OnValidSubmit="@HandleConfigurationSubmit" Context="editContext">
+                                <EditForm Model="@_configuration" Context="editContext">
                                     <DataAnnotationsValidator />
                                     <ValidationSummary />
 
@@ -554,15 +557,16 @@
                                     </div>
 
                                     <div class="d-flex gap-2">
-                                        <button type="submit" class="btn btn-primary" disabled="@_isProcessing">
+                                        <button type="button" class="btn btn-primary" @onclick="ProceedToSchemaMapping" disabled="@_isProcessing">
                                             @if (_isProcessing)
                                             {
                                                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                                <text> Processing...</text>
+                                                <text> Processing JSON...</text>
                                             }
                                             else
                                             {
-                                                <text>Create App Registration & External Connection</text>
+                                                <i class="fas fa-arrow-right me-2"></i>
+                                                <text>Next: Configure Schema Mapping</text>
                                             }
                                         </button>
                                         
@@ -780,6 +784,23 @@
             </AuthorizeView>
             }
 
+            @* Schema Mapping Section *@
+            @if (_currentStep == SetupStep.SchemaMapping && _schemaMappingConfig != null)
+            {
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cogs me-2"></i>Step 2: Configure Schema & Semantic Labels</h5>
+                    </div>
+                    <div class="card-body">
+                        <SchemaMappingComponent 
+                            Configuration="_schemaMappingConfig" 
+                            OnSave="HandleSchemaMappingSubmit"
+                            OnCancel="BackToConfiguration"
+                            SemanticLabelService="SemanticLabelMappingService" />
+                    </div>
+                </div>
+            }
+
             @* Azure CLI Configuration Section - shown regardless of authentication status *@
             @if (_useAzureCli && _currentStep == SetupStep.Configuration)
             {
@@ -789,7 +810,7 @@
                         <small class="text-muted">Using Azure CLI authentication</small>
                     </div>
                     <div class="card-body">
-                        <EditForm Model="@_configuration" OnValidSubmit="@HandleConfigurationSubmit" Context="editContext">
+                        <EditForm Model="@_configuration" Context="editContext">
                             <DataAnnotationsValidator />
                             <ValidationSummary />
 
@@ -824,15 +845,16 @@
                             </div>
 
                             <div class="d-flex gap-2">
-                                <button type="submit" class="btn btn-primary" disabled="@_isProcessing">
+                                <button type="button" class="btn btn-primary" @onclick="ProceedToSchemaMapping" disabled="@_isProcessing">
                                     @if (_isProcessing)
                                     {
                                         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                        <text> Processing...</text>
+                                        <text> Processing JSON...</text>
                                     }
                                     else
                                     {
-                                        <text>Create App Registration & Schema</text>
+                                        <i class="fas fa-arrow-right me-2"></i>
+                                        <text>Next: Configure Schema Mapping</text>
                                     }
                                 </button>
                                 <button type="button" class="btn btn-outline-secondary" @onclick="() => _useAzureCli = false">
@@ -884,12 +906,12 @@
     private TenantConfigurationModel _configuration = new();
     private AppRegistrationResult? _appRegistrationResult;
     private SchemaCreationResult? _schemaResult;
+    private SchemaMappingConfiguration? _schemaMappingConfig;
     private bool _isProcessing = false;
     private bool _isBootstrapping = false;
     private bool _showSecret = false;
     private bool _useAzureCli = false;
     private bool _autoLoginAttempted = false;
-    private bool _showWebTerminal = false;
     private string _terminalSessionId = Guid.NewGuid().ToString();
     private string _errorMessage = string.Empty;
     private string _successMessage = string.Empty;
@@ -1126,14 +1148,14 @@
 
     private void OpenWebTerminal()
     {
-        _showWebTerminal = true;
         _terminalSessionId = Guid.NewGuid().ToString();
+        // Web terminal functionality - placeholder
         StateHasChanged();
     }
 
     private void CloseWebTerminal()
     {
-        _showWebTerminal = false;
+        // Web terminal functionality - placeholder
         StateHasChanged();
     }
 
@@ -1494,6 +1516,7 @@
     private enum SetupStep
     {
         Configuration,
+        SchemaMapping,
         AppRegistrationCreated,
         AdminConsentRequired,
         CreatingConnection,
@@ -1614,7 +1637,7 @@
     {
         try
         {
-            var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId, "http://localhost:5000/consent-complete");
+            var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId);
             await JSRuntime.InvokeVoidAsync("window.open", consentUrl, "_blank");
         }
         catch (Exception ex)
@@ -1628,12 +1651,13 @@
     {
         return _currentStep switch
         {
-            SetupStep.Configuration => "20%",
-            SetupStep.AppRegistrationCreated => "40%",
-            SetupStep.AdminConsentRequired => "60%",
-            SetupStep.CreatingConnection => "80%",
+            SetupStep.Configuration => "16%",
+            SetupStep.SchemaMapping => "33%",
+            SetupStep.AppRegistrationCreated => "50%",
+            SetupStep.AdminConsentRequired => "66%",
+            SetupStep.CreatingConnection => "83%",
             SetupStep.Completed => "100%",
-            _ => "20%"
+            _ => "16%"
         };
     }
 
@@ -1641,12 +1665,13 @@
     {
         return _currentStep switch
         {
-            SetupStep.Configuration => 20,
-            SetupStep.AppRegistrationCreated => 40,
-            SetupStep.AdminConsentRequired => 60,
-            SetupStep.CreatingConnection => 80,
+            SetupStep.Configuration => 16,
+            SetupStep.SchemaMapping => 33,
+            SetupStep.AppRegistrationCreated => 50,
+            SetupStep.AdminConsentRequired => 66,
+            SetupStep.CreatingConnection => 83,
             SetupStep.Completed => 100,
-            _ => 20
+            _ => 16
         };
     }
 
@@ -1689,6 +1714,162 @@
         _uiUpdateTimer?.Dispose();
         _uiUpdateTimer = null;
         LogActivity("Process timer stopped", ActivityLogType.Info);
+    }
+
+    private void ProceedToSchemaMapping()
+    {
+        try
+        {
+            _errorMessage = string.Empty;
+            
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(_configuration.TenantId))
+            {
+                _errorMessage = "Tenant ID is required";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_configuration.JsonSample))
+            {
+                _errorMessage = "JSON sample is required";
+                return;
+            }
+
+            // Validate JSON format
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(_configuration.JsonSample);
+            }
+            catch (Exception jsonEx)
+            {
+                _errorMessage = $"Invalid JSON format: {jsonEx.Message}";
+                return;
+            }
+
+            _isProcessing = true;
+            StateHasChanged();
+
+            // Parse JSON and create schema mapping configuration
+            _schemaMappingConfig = JsonFieldParserService.ParseJsonToSchema(
+                _configuration.JsonSample,
+                _configuration.ConnectionName,
+                _configuration.ConnectionDescription);
+
+            // Auto-assign semantic labels
+            SemanticLabelMappingService.AssignSemanticLabels(_schemaMappingConfig.Fields);
+
+            _currentStep = SetupStep.SchemaMapping;
+            _successMessage = "JSON parsed successfully! Configure your schema fields and semantic labels below.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error parsing JSON: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleSchemaMappingSubmit(SchemaMappingConfiguration mappingConfig)
+    {
+        try
+        {
+            _errorMessage = string.Empty;
+            _successMessage = string.Empty;
+            _isProcessing = true;
+            _forceShowUI = true;
+            StateHasChanged();
+
+            // Check authentication
+            if (AuthenticationStateTask == null)
+            {
+                _errorMessage = "Authentication is required. Please sign in.";
+                return;
+            }
+
+            var authState = await AuthenticationStateTask;
+            if (!authState.User.Identity?.IsAuthenticated ?? true)
+            {
+                _errorMessage = "Please sign in to continue.";
+                return;
+            }
+
+            var user = authState.User;
+
+            // Step 1: Create App Registration (if not using Azure CLI)
+            if (_useAzureCli)
+            {
+                _successMessage = "Using Azure CLI authentication. Creating schema and connection...";
+                StateHasChanged();
+                await Task.Delay(1000);
+
+                // Create schema and connection using mapping config with Azure CLI
+                _schemaResult = await SchemaService.CreateSchemaAndConnectionFromMappingWithAzureCliAsync(
+                    mappingConfig,
+                    progress: new Progress<string>(message => 
+                    {
+                        _statusMessage = message;
+                        InvokeAsync(StateHasChanged);
+                    }));
+            }
+            else
+            {
+                // Create app registration first
+                _appRegistrationResult = await AppRegistrationService.CreateAppRegistrationAsync(user, mappingConfig.ConnectionName);
+
+                if (!_appRegistrationResult.Success)
+                {
+                    _errorMessage = _appRegistrationResult.ErrorMessage ?? "Failed to create app registration.";
+                    return;
+                }
+
+                _currentStep = SetupStep.AppRegistrationCreated;
+                StateHasChanged();
+
+                // Wait for app registration and client secret to propagate
+                await Task.Delay(30000);
+
+                // Create schema and connection using mapping config
+                _schemaResult = await SchemaService.CreateSchemaAndConnectionFromMappingAsync(
+                    user,
+                    mappingConfig,
+                    progress: new Progress<string>(message => 
+                    {
+                        _statusMessage = message;
+                        InvokeAsync(StateHasChanged);
+                    }));
+            }
+
+            if (!_schemaResult.Success)
+            {
+                _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection.";
+                return;
+            }
+
+            _currentStep = SetupStep.Completed;
+            _successMessage = $"✅ External connection '{mappingConfig.ConnectionName}' created successfully with custom schema mapping!";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessing = false;
+            _forceShowUI = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BackToConfiguration()
+    {
+        _currentStep = SetupStep.Configuration;
+        _schemaMappingConfig = null;
+        _errorMessage = string.Empty;
+        _successMessage = string.Empty;
+        StateHasChanged();
     }
 
     public void Dispose()

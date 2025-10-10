@@ -4,6 +4,7 @@ using CopilotConnectorGui.Models;
 using System.Security.Claims;
 using Newtonsoft.Json;
 using Microsoft.Graph.Applications.Item.AddPassword;
+using Microsoft.Extensions.Options;
 
 namespace CopilotConnectorGui.Services
 {
@@ -11,11 +12,16 @@ namespace CopilotConnectorGui.Services
     {
         private readonly GraphService _graphService;
         private readonly ILogger<AppRegistrationService> _logger;
+        private readonly ApplicationUrlsConfiguration _urlConfig;
 
-        public AppRegistrationService(GraphService graphService, ILogger<AppRegistrationService> logger)
+        public AppRegistrationService(
+            GraphService graphService, 
+            ILogger<AppRegistrationService> logger,
+            IOptions<ApplicationUrlsConfiguration> urlConfig)
         {
             _graphService = graphService;
             _logger = logger;
+            _urlConfig = urlConfig.Value;
         }
 
         public async Task<AppRegistrationResult> CreateAppRegistrationAsync(ClaimsPrincipal user, string tenantId)
@@ -34,14 +40,7 @@ namespace CopilotConnectorGui.Services
                     signInAudience = "AzureADMyOrg",
                     web = new
                     {
-                        redirectUris = new[]
-                        {
-                            "http://localhost:5000/",
-                            "https://localhost:5001/",
-                            "http://localhost:7265/",
-                            "https://localhost:7266/",
-                            "http://localhost:5000/consent-complete"
-                        }
+                        redirectUris = _urlConfig.GetAllRedirectUris().ToArray()
                     },
                     requiredResourceAccess = new[]
                     {
@@ -118,14 +117,7 @@ namespace CopilotConnectorGui.Services
                     SignInAudience = "AzureADMyOrg",
                     Web = new Microsoft.Graph.Models.WebApplication
                     {
-                        RedirectUris = new List<string>
-                        {
-                            "http://localhost:5000/",
-                            "https://localhost:5001/",
-                            "http://localhost:7265/",
-                            "https://localhost:7266/",
-                            "http://localhost:5000/consent-complete"
-                        }
+                        RedirectUris = _urlConfig.GetAllRedirectUris()
                     },
                     RequiredResourceAccess = new List<RequiredResourceAccess>
                     {
@@ -302,8 +294,8 @@ namespace CopilotConnectorGui.Services
         {
             if (string.IsNullOrEmpty(redirectUri))
             {
-                // Default to consent completion page instead of home page
-                redirectUri = "http://localhost:5000/consent-complete";
+                // Default to consent completion page from configuration
+                redirectUri = _urlConfig.ConsentCompleteUrl;
             }
 
             var consentUrl = $"https://login.microsoftonline.com/{tenantId}/adminconsent?" +

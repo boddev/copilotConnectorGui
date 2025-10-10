@@ -1,15 +1,21 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using CopilotConnectorGui.Models;
 
 namespace CopilotConnectorGui.Services
 {
     public class AzureBootstrapService
     {
         private readonly ILogger<AzureBootstrapService> _logger;
+        private readonly ApplicationUrlsConfiguration _urlConfig;
 
-        public AzureBootstrapService(ILogger<AzureBootstrapService> logger)
+        public AzureBootstrapService(
+            ILogger<AzureBootstrapService> logger,
+            IOptions<ApplicationUrlsConfiguration> urlConfig)
         {
             _logger = logger;
+            _urlConfig = urlConfig.Value;
         }
 
         public async Task<BootstrapResult> BootstrapApplicationAsync()
@@ -157,7 +163,7 @@ namespace CopilotConnectorGui.Services
                 var clientSecret = secretInfo.GetProperty("password").GetString();
 
                 // Add redirect URI for the application
-                var redirectUri = "https://localhost:5001/signin-oidc";
+                var redirectUri = _urlConfig.SignInCallbackUrl;
                 await RunCommandAsync("az", $"ad app update --id {appId} --web-redirect-uris {redirectUri}");
 
                 return new BootstrapResult

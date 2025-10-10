@@ -4,6 +4,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
+using CopilotConnectorGui.Models;
 
 namespace CopilotConnectorGui.Services
 {
@@ -11,10 +13,14 @@ namespace CopilotConnectorGui.Services
     {
         private readonly ILogger<WebTerminalService> _logger;
         private readonly ConcurrentDictionary<string, TerminalSession> _sessions = new();
+        private readonly ApplicationUrlsConfiguration _urlConfig;
 
-        public WebTerminalService(ILogger<WebTerminalService> logger)
+        public WebTerminalService(
+            ILogger<WebTerminalService> logger,
+            IOptions<ApplicationUrlsConfiguration> urlConfig)
         {
             _logger = logger;
+            _urlConfig = urlConfig.Value;
         }
 
         public async Task HandleWebSocketAsync(WebSocket webSocket, string sessionId)
@@ -512,7 +518,7 @@ namespace CopilotConnectorGui.Services
             });
 
             var appName = $"Copilot-Connector-Bootstrap-{DateTime.Now:yyyyMMdd-HHmmss}";
-            await ExecuteAzureCliCommandAsync(session, $"az ad app create --display-name \"{appName}\" --web-redirect-uris https://localhost:5001/signin-oidc --output table");
+            await ExecuteAzureCliCommandAsync(session, $"az ad app create --display-name \"{appName}\" --web-redirect-uris {_urlConfig.SignInCallbackUrl} --output table");
 
             await SendMessageAsync(session.WebSocket!, new TerminalMessage
             {

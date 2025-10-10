@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Security.Claims;
 using Microsoft.Extensions.Logging;
+using Azure.Identity;
 
 namespace CopilotConnectorGui.Services
 {
@@ -700,6 +701,285 @@ namespace CopilotConnectorGui.Services
             }
 
             return normalized;
+        }
+
+        public async Task<SchemaCreationResult> CreateSchemaAndConnectionFromMappingAsync(
+            ClaimsPrincipal user,
+            SchemaMappingConfiguration mappingConfig,
+            IProgress<string>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                _logger.LogInformation("Starting External Connection creation from schema mapping");
+                progress?.Report("Initializing External Connection creation from custom schema...");
+                
+                // Use user's delegated permissions
+                using var httpClient = await _graphService.GetAuthenticatedHttpClientAsync(user);
+                
+                // Create connection ID that fits 3-32 character limit
+                var connectionId = GenerateConnectionId(mappingConfig.ConnectionName);
+                _logger.LogInformation("Generated connection ID: {ConnectionId}", connectionId);
+                
+                progress?.Report("Creating External Connection...");
+                
+                // Create the external connection
+                var connection = new
+                {
+                    id = connectionId,
+                    name = mappingConfig.ConnectionName,
+                    description = mappingConfig.ConnectionDescription
+                };
+
+                var connectionJson = JsonConvert.SerializeObject(connection);
+                var connectionContent = new StringContent(connectionJson, System.Text.Encoding.UTF8, "application/json");
+                
+                var connectionResponse = await httpClient.PostAsync("external/connections", connectionContent);
+                
+                if (!connectionResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await connectionResponse.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to create External Connection: {StatusCode} - {Error}", connectionResponse.StatusCode, errorContent);
+                    
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Failed to create external connection: {connectionResponse.StatusCode} - {errorContent}"
+                    };
+                }
+
+                _logger.LogInformation("External Connection created successfully. Creating schema...");
+                progress?.Report("External Connection created! Creating schema from field mappings...");
+                
+                // Wait a moment for connection to be created
+                await Task.Delay(2000, cancellationToken);
+
+                // Create schema from mapping configuration
+                var schemaRequest = new
+                {
+                    baseType = "microsoft.graph.externalItem",
+                    properties = mappingConfig.Fields.Select(field => new
+                    {
+                        name = field.FieldName,
+                        type = GetApiPropertyTypeFromFieldType(field.DataType),
+                        isSearchable = field.IsSearchable,
+                        isQueryable = field.IsQueryable,
+                        isRetrievable = field.IsRetrievable,
+                        isRefinable = field.IsRefinable,
+                        labels = field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None 
+                            ? new[] { field.SemanticLabel.ToString()!.ToLowerInvariant() } 
+                            : Array.Empty<string>()
+                    }).ToArray()
+                };
+
+                var schemaJson = JsonConvert.SerializeObject(schemaRequest);
+                _logger.LogInformation("Schema JSON being sent: {SchemaJson}", schemaJson);
+                var schemaContent = new StringContent(schemaJson, System.Text.Encoding.UTF8, "application/json");
+
+                progress?.Report("Registering schema with Microsoft Graph...");
+                var schemaResponse = await httpClient.PatchAsync($"external/connections/{connectionId}/schema", schemaContent);
+                
+                if (!schemaResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await schemaResponse.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to create schema: {StatusCode} - {Error}", schemaResponse.StatusCode, errorContent);
+                    
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Failed to create schema: {schemaResponse.StatusCode} - {errorContent}"
+                    };
+                }
+
+                _logger.LogInformation("Schema submitted successfully. Waiting for registration to complete...");
+                progress?.Report("Schema submitted! Waiting for registration to complete...");
+                
+                // Wait for schema registration
+                await WaitForSchemaRegistrationHttp(httpClient, connectionId, progress, cancellationToken);
+
+                _logger.LogInformation("External Connection and Schema creation completed successfully. Connection ID: {ConnectionId}", connectionId);
+                progress?.Report($"✅ Connection '{mappingConfig.ConnectionName}' created successfully!");
+                
+                return new SchemaCreationResult
+                {
+                    SchemaId = connectionId,
+                    ConnectionId = connectionId,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating schema and connection from mapping");
+                return new SchemaCreationResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        public async Task<SchemaCreationResult> CreateSchemaAndConnectionFromMappingWithAzureCliAsync(
+            SchemaMappingConfiguration mappingConfig,
+            IProgress<string>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                _logger.LogInformation("Starting External Connection creation from schema mapping using Azure CLI");
+                progress?.Report("Initializing External Connection creation using Azure CLI...");
+                
+                // Use Azure CLI authenticated HTTP client
+                var graphClient = _graphService.GetGraphServiceClientWithAzureCli();
+                using var httpClient = await GetHttpClientFromGraphServiceClient(graphClient);
+                
+                // Create connection ID that fits 3-32 character limit
+                var connectionId = GenerateConnectionId(mappingConfig.ConnectionName);
+                _logger.LogInformation("Generated connection ID: {ConnectionId}", connectionId);
+                
+                progress?.Report("Creating External Connection with Azure CLI authentication...");
+                
+                // Create the external connection
+                var connection = new
+                {
+                    id = connectionId,
+                    name = mappingConfig.ConnectionName,
+                    description = mappingConfig.ConnectionDescription
+                };
+
+                var connectionJson = JsonConvert.SerializeObject(connection);
+                var connectionContent = new StringContent(connectionJson, System.Text.Encoding.UTF8, "application/json");
+                
+                var connectionResponse = await httpClient.PostAsync("external/connections", connectionContent);
+                
+                if (!connectionResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await connectionResponse.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to create External Connection: {StatusCode} - {Error}", connectionResponse.StatusCode, errorContent);
+                    
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Failed to create external connection: {connectionResponse.StatusCode} - {errorContent}"
+                    };
+                }
+
+                _logger.LogInformation("External Connection created successfully. Creating schema...");
+                progress?.Report("External Connection created! Creating schema from field mappings...");
+                
+                // Wait a moment for connection to be created
+                await Task.Delay(2000, cancellationToken);
+
+                // Create schema from mapping configuration
+                var schemaRequest = new
+                {
+                    baseType = "microsoft.graph.externalItem",
+                    properties = mappingConfig.Fields.Select(field => new
+                    {
+                        name = field.FieldName,
+                        type = GetApiPropertyTypeFromFieldType(field.DataType),
+                        isSearchable = field.IsSearchable,
+                        isQueryable = field.IsQueryable,
+                        isRetrievable = field.IsRetrievable,
+                        isRefinable = field.IsRefinable,
+                        labels = field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None 
+                            ? new[] { field.SemanticLabel.ToString()!.ToLowerInvariant() } 
+                            : Array.Empty<string>()
+                    }).ToArray()
+                };
+
+                var schemaJson = JsonConvert.SerializeObject(schemaRequest);
+                _logger.LogInformation("Schema JSON being sent: {SchemaJson}", schemaJson);
+                var schemaContent = new StringContent(schemaJson, System.Text.Encoding.UTF8, "application/json");
+
+                progress?.Report("Registering schema with Microsoft Graph...");
+                var schemaResponse = await httpClient.PatchAsync($"external/connections/{connectionId}/schema", schemaContent);
+                
+                if (!schemaResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = await schemaResponse.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to create schema: {StatusCode} - {Error}", schemaResponse.StatusCode, errorContent);
+                    
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Failed to create schema: {schemaResponse.StatusCode} - {errorContent}"
+                    };
+                }
+
+                _logger.LogInformation("Schema submitted successfully. Waiting for registration to complete...");
+                progress?.Report("Schema submitted! Waiting for registration to complete...");
+                
+                // Wait for schema registration
+                await WaitForSchemaRegistrationHttp(httpClient, connectionId, progress, cancellationToken);
+
+                _logger.LogInformation("External Connection and Schema creation completed successfully. Connection ID: {ConnectionId}", connectionId);
+                progress?.Report($"✅ Connection '{mappingConfig.ConnectionName}' created successfully!");
+                
+                return new SchemaCreationResult
+                {
+                    SchemaId = connectionId,
+                    ConnectionId = connectionId,
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating schema and connection from mapping with Azure CLI");
+                return new SchemaCreationResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        private string GenerateConnectionId(string connectionName)
+        {
+            // Create connection ID that fits 3-32 character limit
+            var sanitized = System.Text.RegularExpressions.Regex.Replace(connectionName.ToLowerInvariant(), @"[^a-z0-9]", "");
+            
+            if (sanitized.Length > 20)
+                sanitized = sanitized[..20];
+            
+            if (sanitized.Length < 3)
+                sanitized = "copilot" + sanitized;
+            
+            // Ensure it doesn't start with a number
+            if (char.IsDigit(sanitized[0]))
+                sanitized = "c" + sanitized[1..];
+                
+            return sanitized;
+        }
+
+        private string GetApiPropertyTypeFromFieldType(FieldDataType fieldType)
+        {
+            return fieldType switch
+            {
+                FieldDataType.String => "string",
+                FieldDataType.Int32 => "int32",
+                FieldDataType.Int64 => "int64",
+                FieldDataType.Double => "double",
+                FieldDataType.DateTime => "dateTime",
+                FieldDataType.Boolean => "boolean",
+                FieldDataType.StringCollection => "stringCollection",
+                FieldDataType.Object => "string", // Objects are serialized as strings
+                _ => "string"
+            };
+        }
+
+        private async Task<HttpClient> GetHttpClientFromGraphServiceClient(GraphServiceClient graphClient)
+        {
+            // Extract the credential from GraphServiceClient and create an HttpClient
+            var credential = new Azure.Identity.AzureCliCredential();
+            var tokenRequestContext = new Azure.Core.TokenRequestContext(new[] { "https://graph.microsoft.com/.default" });
+            var token = await credential.GetTokenAsync(tokenRequestContext);
+            
+            var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = 
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token.Token);
+            httpClient.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/");
+            
+            return httpClient;
         }
     }
 }

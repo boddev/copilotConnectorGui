@@ -1,0 +1,499 @@
+@using CopilotConnectorGui.Models
+@using CopilotConnectorGui.Services
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
+@inject IJSRuntime JSRuntime
+
+<div class="schema-mapping-container">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-sitemap me-2"></i>Schema Field Mapping
+            </h5>
+        </div>
+        <div class="card-body">
+            @if (Configuration != null && Configuration.Fields.Any())
+            {
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Connection Name</label>
+                        <input type="text" class="form-control" @bind="Configuration.ConnectionName" 
+                               placeholder="Enter connection name" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Connection Description</label>
+                        <input type="text" class="form-control" @bind="Configuration.ConnectionDescription" 
+                               placeholder="Enter description" />
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Fields have been automatically parsed from your JSON. Semantic labels are auto-assigned based on field names and types.
+                    You can modify assignments, add new fields, or remove unwanted fields.
+                </div>
+
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="fields-list">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Detected Fields (@FlattenedFields.Count)</h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AddCustomField">
+                                    <i class="fas fa-plus me-1"></i>Add Custom Field
+                                </button>
+                            </div>
+
+                            @foreach (var (field, index) in FlattenedFields.Select((f, i) => (f, i)))
+                            {
+                                <div class="field-card @(field == _selectedField ? "selected" : "")" 
+                                     @onclick="() => SelectField(field)">
+                                    <div class="field-header">
+                                        <div class="field-info">
+                                            <div class="field-name">
+                                                <strong>@field.DisplayName</strong>
+                                                <span class="field-name-technical">(@field.FieldName)</span>
+                                            </div>
+                                            <div class="field-meta">
+                                                <span class="badge bg-secondary me-1">@field.DataType</span>
+                                                @if (field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None)
+                                                {
+                                                    <span class="badge bg-primary me-1">@GetSemanticLabelDisplayName(field.SemanticLabel.Value)</span>
+                                                }
+                                                @if (field.IsRequired)
+                                                {
+                                                    <span class="badge bg-danger me-1">Required</span>
+                                                }
+                                                @if (field.IsArray)
+                                                {
+                                                    <span class="badge bg-info me-1">Array</span>
+                                                }
+                                            </div>
+                                        </div>
+                                        <div class="field-actions">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" 
+                                                    @onclick:stopPropagation="true" @onclick="() => RemoveField(field)">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    @if (field.SampleValue != null)
+                                    {
+                                        <div class="field-sample">
+                                            <small class="text-muted">Sample: </small>
+                                            <code>@field.SampleValue</code>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(field.JsonPath))
+                                    {
+                                        <div class="field-path">
+                                            <small class="text-muted">JSON Path: </small>
+                                            <code>@field.JsonPath</code>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                        @if (_selectedField != null)
+                        {
+                            <div class="field-editor sticky-top">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="mb-0">Field Settings</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Display Name</label>
+                                            <input type="text" class="form-control" @bind="_selectedField.DisplayName" />
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="form-label">Field Name (Technical)</label>
+                                            <input type="text" class="form-control" @bind="_selectedField.FieldName" />
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="form-label">Data Type</label>
+                                            <select class="form-select" @bind="_selectedField.DataType" @bind:after="OnDataTypeChanged">
+                                                @foreach (var dataType in Enum.GetValues<FieldDataType>())
+                                                {
+                                                    <option value="@dataType">@dataType</option>
+                                                }
+                                            </select>
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <label class="form-label">Semantic Label</label>
+                                            <select class="form-select" @bind="_selectedField.SemanticLabel">
+                                                @foreach (var compatibleLabel in GetCompatibleSemanticLabels(_selectedField))
+                                                {
+                                                    <option value="@compatibleLabel">@GetSemanticLabelDisplayName(compatibleLabel)</option>
+                                                }
+                                            </select>
+                                            @if (_selectedField.SemanticLabel != null && _selectedField.SemanticLabel != SemanticLabel.None)
+                                            {
+                                                <small class="form-text text-muted">
+                                                    @GetSemanticLabelDescription(_selectedField.SemanticLabel.Value)
+                                                </small>
+                                            }
+                                        </div>
+
+                                        <div class="mb-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" @bind="_selectedField.IsRequired" 
+                                                       id="required-@_selectedField.FieldName" />
+                                                <label class="form-check-label" for="required-@_selectedField.FieldName">
+                                                    Required Field
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" @bind="_selectedField.IsSearchable" 
+                                                           id="searchable-@_selectedField.FieldName" />
+                                                    <label class="form-check-label" for="searchable-@_selectedField.FieldName">
+                                                        <small>Searchable</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" @bind="_selectedField.IsQueryable" 
+                                                           id="queryable-@_selectedField.FieldName" />
+                                                    <label class="form-check-label" for="queryable-@_selectedField.FieldName">
+                                                        <small>Queryable</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" @bind="_selectedField.IsRetrievable" 
+                                                           id="retrievable-@_selectedField.FieldName" />
+                                                    <label class="form-check-label" for="retrievable-@_selectedField.FieldName">
+                                                        <small>Retrievable</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" @bind="_selectedField.IsRefinable" 
+                                                           id="refinable-@_selectedField.FieldName" />
+                                                    <label class="form-check-label" for="refinable-@_selectedField.FieldName">
+                                                        <small>Refinable</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-light">
+                                <i class="fas fa-hand-pointer me-2"></i>
+                                Select a field to edit its properties and semantic label assignment.
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="OnCancel">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </button>
+                        <div>
+                            <button type="button" class="btn btn-outline-primary me-2" @onclick="PreviewSchema">
+                                <i class="fas fa-eye me-2"></i>Preview Schema
+                            </button>
+                            <button type="button" class="btn btn-primary" @onclick="HandleSave" disabled="@(!IsValidConfiguration())">
+                                <i class="fas fa-save me-2"></i>Create Connection
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                @if (_showPreview)
+                {
+                    <div class="mt-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">Schema Preview</h6>
+                            </div>
+                            <div class="card-body">
+                                <pre class="bg-light p-3 rounded"><code>@_schemaPreview</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    No fields detected. Please provide valid JSON sample data.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public SchemaMappingConfiguration? Configuration { get; set; }
+    [Parameter] public EventCallback<SchemaMappingConfiguration> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public SemanticLabelMappingService? SemanticLabelService { get; set; }
+
+    private SchemaFieldDefinition? _selectedField;
+    private List<SchemaFieldDefinition> FlattenedFields = new();
+    private bool _showPreview = false;
+    private string _schemaPreview = string.Empty;
+    
+    protected override void OnParametersSet()
+    {
+        if (Configuration != null)
+        {
+            var parser = new JsonFieldParserService();
+            FlattenedFields = parser.FlattenFields(Configuration.Fields);
+            
+            if (SemanticLabelService != null)
+            {
+                SemanticLabelService.AssignSemanticLabels(FlattenedFields);
+            }
+        }
+    }
+
+    private void SelectField(SchemaFieldDefinition field)
+    {
+        _selectedField = field;
+        StateHasChanged();
+    }
+
+    private void AddCustomField()
+    {
+        var newField = new SchemaFieldDefinition
+        {
+            FieldName = $"customField_{FlattenedFields.Count + 1}",
+            DisplayName = $"Custom Field {FlattenedFields.Count + 1}",
+            DataType = FieldDataType.String,
+            IsRequired = false,
+            IsSearchable = true,
+            IsQueryable = true,
+            IsRetrievable = true,
+            SemanticLabel = SemanticLabel.None,
+            JsonPath = "",
+            SampleValue = ""
+        };
+
+        FlattenedFields.Add(newField);
+        _selectedField = newField;
+        StateHasChanged();
+    }
+
+    private void RemoveField(SchemaFieldDefinition field)
+    {
+        FlattenedFields.Remove(field);
+        
+        if (_selectedField == field)
+        {
+            _selectedField = null;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void OnDataTypeChanged()
+    {
+        if (_selectedField != null && SemanticLabelService != null)
+        {
+            // Re-validate semantic label compatibility
+            var compatibleLabels = SemanticLabelService.GetCompatibleSemanticLabels(_selectedField);
+            if (_selectedField.SemanticLabel.HasValue && !compatibleLabels.Contains(_selectedField.SemanticLabel.Value))
+            {
+                _selectedField.SemanticLabel = SemanticLabel.None;
+            }
+        }
+        StateHasChanged();
+    }
+
+    private List<SemanticLabel> GetCompatibleSemanticLabels(SchemaFieldDefinition field)
+    {
+        return SemanticLabelService?.GetCompatibleSemanticLabels(field) ?? new List<SemanticLabel> { SemanticLabel.None };
+    }
+
+    private string GetSemanticLabelDisplayName(SemanticLabel label)
+    {
+        var info = SemanticLabelService?.GetSemanticLabelInfo(label);
+        return info?.DisplayName ?? label.ToString();
+    }
+
+    private string GetSemanticLabelDescription(SemanticLabel label)
+    {
+        var info = SemanticLabelService?.GetSemanticLabelInfo(label);
+        return info?.Description ?? "";
+    }
+
+    private bool IsValidConfiguration()
+    {
+        if (Configuration == null || string.IsNullOrWhiteSpace(Configuration.ConnectionName))
+            return false;
+
+        // Must have at least one field
+        return FlattenedFields.Any();
+    }
+
+    private void PreviewSchema()
+    {
+        _showPreview = !_showPreview;
+        
+        if (_showPreview)
+        {
+            // Generate schema preview
+            var schemaObject = new
+            {
+                baseType = "microsoft.graph.externalItem",
+                properties = FlattenedFields.Select(f => new
+                {
+                    name = f.FieldName,
+                    type = GetSchemaType(f.DataType),
+                    isSearchable = f.IsSearchable,
+                    isQueryable = f.IsQueryable,
+                    isRetrievable = f.IsRetrievable,
+                    isRefinable = f.IsRefinable,
+                    labels = f.SemanticLabel != null && f.SemanticLabel != SemanticLabel.None ? new[] { f.SemanticLabel.ToString()!.ToLowerInvariant() } : Array.Empty<string>()
+                }).ToArray()
+            };
+
+            _schemaPreview = JsonSerializer.Serialize(schemaObject, new JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+        }
+        
+        StateHasChanged();
+    }
+
+    private string GetSchemaType(FieldDataType dataType)
+    {
+        return dataType switch
+        {
+            FieldDataType.String => "String",
+            FieldDataType.Int32 => "Int32",
+            FieldDataType.Int64 => "Int64",
+            FieldDataType.Double => "Double",
+            FieldDataType.DateTime => "DateTime",
+            FieldDataType.Boolean => "Boolean",
+            FieldDataType.StringCollection => "StringCollection",
+            _ => "String"
+        };
+    }
+
+    private async Task HandleSave()
+    {
+        if (Configuration != null && IsValidConfiguration())
+        {
+            // Update the configuration with the modified fields
+            Configuration.Fields = FlattenedFields.Select(f => new SchemaFieldDefinition
+            {
+                FieldName = f.FieldName,
+                DisplayName = f.DisplayName,
+                DataType = f.DataType,
+                IsRequired = f.IsRequired,
+                IsSearchable = f.IsSearchable,
+                IsQueryable = f.IsQueryable,
+                IsRetrievable = f.IsRetrievable,
+                IsRefinable = f.IsRefinable,
+                SemanticLabel = f.SemanticLabel,
+                JsonPath = f.JsonPath,
+                SampleValue = f.SampleValue,
+                IsArray = f.IsArray
+            }).ToList();
+
+            await OnSave.InvokeAsync(Configuration);
+        }
+    }
+}
+
+<style>
+    .schema-mapping-container {
+        max-width: 100%;
+    }
+
+    .fields-list {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+
+    .field-card {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        background: white;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .field-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
+
+    .field-card.selected {
+        border-color: #0d6efd;
+        background-color: #f8f9ff;
+    }
+
+    .field-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .field-info {
+        flex: 1;
+    }
+
+    .field-name {
+        margin-bottom: 0.25rem;
+    }
+
+    .field-name-technical {
+        color: #6c757d;
+        font-size: 0.875rem;
+        font-weight: normal;
+    }
+
+    .field-meta {
+        margin-bottom: 0.5rem;
+    }
+
+    .field-sample, .field-path {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid #e9ecef;
+    }
+
+    .field-editor {
+        top: 20px;
+    }
+
+    .badge {
+        font-size: 0.75rem;
+    }
+
+    pre code {
+        font-size: 0.875rem;
+        line-height: 1.4;
+    }
+</style>

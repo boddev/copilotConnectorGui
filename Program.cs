@@ -72,7 +72,13 @@ builder.Services.AddScoped<GraphService>();
 builder.Services.AddScoped<AppRegistrationService>();
 builder.Services.AddScoped<SchemaService>();
 builder.Services.AddScoped<AzureBootstrapService>();
+builder.Services.AddScoped<JsonFieldParserService>();
+builder.Services.AddScoped<SemanticLabelMappingService>();
 builder.Services.AddSingleton<WebTerminalService>();
+
+// Configure application URLs
+builder.Services.Configure<CopilotConnectorGui.Models.ApplicationUrlsConfiguration>(
+    builder.Configuration.GetSection("ApplicationUrls"));
 
 var app = builder.Build();
 
