@@ -1,0 +1,8 @@
+@page "/ingestion-services"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@{
+    ViewData["Title"] = "Ingestion Services";
+}
+
+<component type="typeof(CopilotConnectorGui.Components.IngestionServicesComponent)" render-mode="ServerPrerendered" />

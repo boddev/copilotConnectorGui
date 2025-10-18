@@ -45,9 +45,10 @@ namespace CopilotConnectorGui.Services
                 if (label == SemanticLabel.None) continue;
 
                 // Check if field name matches common field names for this semantic label
+                // Use exact match or word boundary matching to avoid false positives
                 if (info.CommonFieldNames.Any(commonName => 
-                    fieldNameLower.Contains(commonName.ToLowerInvariant()) ||
-                    displayNameLower.Contains(commonName.ToLowerInvariant())))
+                    IsFieldNameMatch(fieldNameLower, commonName.ToLowerInvariant()) ||
+                    IsFieldNameMatch(displayNameLower, commonName.ToLowerInvariant())))
                 {
                     // Verify data type compatibility if specified
                     if (info.PreferredDataType == field.DataType || info.PreferredDataType == FieldDataType.String)
@@ -131,7 +132,7 @@ namespace CopilotConnectorGui.Services
                     Description = "The main name or heading of the item that you want shown in search and other experiences",
                     PreferredDataType = FieldDataType.String,
                     IsRequired = false,
-                    CommonFieldNames = new[] { "title", "name", "subject", "heading", "documentTitle", "ticketSubject", "reportName" }
+                    CommonFieldNames = new[] { "title", "subject", "heading", "documentTitle", "ticketSubject", "reportName", "itemName", "displayName" }
                 },
                 [SemanticLabel.Url] = new SemanticLabelInfo
                 {
@@ -222,6 +223,70 @@ namespace CopilotConnectorGui.Services
                     CommonFieldNames = new[] { "containerUrl", "projectUrl", "folderLink", "groupPage", "siteUrl", "libraryUrl" }
                 }
             };
+        }
+
+        /// <summary>
+        /// Provides precise field name matching to avoid false positives.
+        /// This method uses exact matching and word boundary detection to ensure
+        /// that partial matches like "name" in "manufacturerName" don't trigger incorrectly.
+        /// </summary>
+        /// <param name="fieldName">The field name to check (should be lowercase)</param>
+        /// <param name="targetName">The target name to match against (should be lowercase)</param>
+        /// <returns>True if there's a valid match, false otherwise</returns>
+        private bool IsFieldNameMatch(string fieldName, string targetName)
+        {
+            if (string.IsNullOrEmpty(fieldName) || string.IsNullOrEmpty(targetName))
+                return false;
+
+            // Exact match
+            if (fieldName.Equals(targetName, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Check if the field name starts with the target name followed by a non-letter
+            // This catches cases like "titleText" matching "title"
+            if (fieldName.StartsWith(targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (fieldName.Length > targetName.Length)
+                {
+                    char nextChar = fieldName[targetName.Length];
+                    // Allow match if followed by non-letter (like underscore, digit, etc.)
+                    // or uppercase letter (camelCase boundary)
+                    return !char.IsLower(nextChar);
+                }
+            }
+
+            // Check if the field name ends with the target name preceded by a non-letter
+            // This catches cases like "itemTitle" matching "title"
+            if (fieldName.EndsWith(targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (fieldName.Length > targetName.Length)
+                {
+                    char prevChar = fieldName[fieldName.Length - targetName.Length - 1];
+                    // Allow match if preceded by non-letter or uppercase letter (camelCase boundary)
+                    return !char.IsLower(prevChar);
+                }
+            }
+
+            // For very short target names (3 characters or less), be more strict
+            // This prevents "name" from matching "manufacturerName" 
+            if (targetName.Length <= 3)
+            {
+                return false; // Only exact matches allowed for short names
+            }
+
+            // Check for word boundaries with common separators
+            string[] separators = { "_", "-", ".", " " };
+            foreach (var separator in separators)
+            {
+                if (fieldName.Contains($"{separator}{targetName}{separator}") ||
+                    fieldName.StartsWith($"{targetName}{separator}") ||
+                    fieldName.EndsWith($"{separator}{targetName}"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

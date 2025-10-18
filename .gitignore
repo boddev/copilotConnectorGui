@@ -393,3 +393,8 @@ obj/Debug/net9.0/apphost.exe
 obj/Debug/net9.0/CopilotConnectorGui.assets.cache
 appsettings.json
 appsettings.Development.json
+Scripts/test-schema.json
+Scripts/test-batch.json
+Scripts/test-product1.json
+Scripts/test-product2.json
+Scripts/test-product3.json

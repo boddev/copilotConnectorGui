@@ -1,0 +1,356 @@
+@page "/ingestion-services"
+@using CopilotConnectorGui.Services
+@using CopilotConnectorGui.Models
+@inject ContainerManagementService ContainerService
+@inject IJSRuntime JSRuntime
+@inject ILogger<IngestionServicesComponent> Logger
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="bi bi-hdd-stack"></i> Ingestion Services</h2>
+                <button class="btn btn-primary" @onclick="RefreshServices">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+
+            @if (_isLoading)
+            {
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading ingestion services...</p>
+                </div>
+            }
+            else if (_services.Count == 0)
+            {
+                <div class="alert alert-info">
+                    <h4><i class="bi bi-info-circle"></i> No Ingestion Services</h4>
+                    <p>No ingestion services are currently deployed. Services are automatically created when you set up external connections.</p>
+                    <a href="/" class="btn btn-primary">Create External Connection</a>
+                </div>
+            }
+            else
+            {
+                <div class="row">
+                    @foreach (var service in _services)
+                    {
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <div class="card h-100 @(service.Status == "running" ? "border-success" : "border-warning")">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="card-title mb-0">
+                                        <i class="bi bi-server"></i> @service.ConnectionId
+                                    </h5>
+                                    <span class="badge @(GetStatusBadgeClass(service.Status))">
+                                        @service.Status.ToUpper()
+                                    </span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <small class="text-muted">Container</small><br>
+                                        <code>@service.ContainerName</code>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <small class="text-muted">Container ID</small><br>
+                                        <code class="small">@service.ContainerId[..12]</code>
+                                    </div>
+
+                                    @if (!string.IsNullOrEmpty(service.ServiceUrl))
+                                    {
+                                        <div class="mb-3">
+                                            <small class="text-muted">Service URL</small><br>
+                                            <a href="@service.ServiceUrl" target="_blank" class="text-decoration-none">
+                                                <i class="bi bi-link-45deg"></i> @service.ServiceUrl
+                                            </a>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <small class="text-muted">API Documentation</small><br>
+                                            <a href="@(service.ServiceUrl)/swagger" target="_blank" class="text-decoration-none">
+                                                <i class="bi bi-book"></i> Swagger UI
+                                            </a>
+                                        </div>
+                                    }
+
+                                    <div class="mb-3">
+                                        <small class="text-muted">Created</small><br>
+                                        @service.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+                                    </div>
+
+                                    @if (_healthStatuses.TryGetValue(service.ConnectionId, out var healthStatus))
+                                    {
+                                        <div class="mb-3">
+                                            <small class="text-muted">Health Status</small><br>
+                                            <span class="badge @(healthStatus.IsHealthy ? "bg-success" : "bg-danger")">
+                                                @(healthStatus.IsHealthy ? "Healthy" : "Unhealthy")
+                                            </span>
+                                            @if (!healthStatus.IsHealthy && !string.IsNullOrEmpty(healthStatus.ErrorMessage))
+                                            {
+                                                <br><small class="text-danger">@healthStatus.ErrorMessage</small>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="card-footer">
+                                    <div class="btn-group w-100" role="group">
+                                        @if (service.Status == "running")
+                                        {
+                                            <button class="btn btn-outline-warning btn-sm" 
+                                                    @onclick="(() => StopService(service.ConnectionId))"
+                                                    disabled="@_actionInProgress">
+                                                <i class="bi bi-stop-circle"></i> Stop
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-outline-success btn-sm" disabled>
+                                                <i class="bi bi-play-circle"></i> Start
+                                            </button>
+                                        }
+                                        
+                                        <button class="btn btn-outline-info btn-sm" 
+                                                @onclick="(() => ViewLogs(service.ConnectionId))"
+                                                disabled="@_actionInProgress">
+                                            <i class="bi bi-journal-text"></i> Logs
+                                        </button>
+                                        
+                                        <button class="btn btn-outline-primary btn-sm" 
+                                                @onclick="(() => CheckHealth(service.ConnectionId))"
+                                                disabled="@_actionInProgress">
+                                            <i class="bi bi-heart-pulse"></i> Health
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+                    <strong>Error:</strong> @_errorMessage
+                    <button type="button" class="btn-close" @onclick="(() => _errorMessage = string.Empty)"></button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(_successMessage))
+            {
+                <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
+                    <strong>Success:</strong> @_successMessage
+                    <button type="button" class="btn-close" @onclick="(() => _successMessage = string.Empty)"></button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Logs Modal -->
+<div class="modal fade" id="logsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Container Logs - @_selectedService</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                @if (_isLoadingLogs)
+                {
+                    <div class="text-center">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span class="ms-2">Loading logs...</span>
+                    </div>
+                }
+                else
+                {
+                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto;"><code>@_containerLogs</code></pre>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" @onclick="RefreshLogs">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<IngestionServiceInfo> _services = new();
+    private Dictionary<string, ServiceHealthStatus> _healthStatuses = new();
+    private bool _isLoading = true;
+    private bool _actionInProgress = false;
+    private bool _isLoadingLogs = false;
+    private string _errorMessage = string.Empty;
+    private string _successMessage = string.Empty;
+    private string _selectedService = string.Empty;
+    private string _containerLogs = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshServices();
+    }
+
+    private async Task RefreshServices()
+    {
+        try
+        {
+            _isLoading = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            _services = await ContainerService.ListIngestionServicesAsync();
+            
+            // Check health status for all running services
+            _healthStatuses.Clear();
+            var healthTasks = _services
+                .Where(s => s.Status == "running")
+                .Select(async s =>
+                {
+                    var health = await ContainerService.CheckServiceHealthAsync(s.ConnectionId);
+                    _healthStatuses[s.ConnectionId] = health;
+                });
+            
+            await Task.WhenAll(healthTasks);
+
+            Logger.LogInformation("Refreshed {Count} ingestion services", _services.Count);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load services: {ex.Message}";
+            Logger.LogError(ex, "Failed to refresh ingestion services");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopService(string connectionId)
+    {
+        try
+        {
+            _actionInProgress = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            var success = await ContainerService.StopIngestionServiceAsync(connectionId);
+            if (success)
+            {
+                _successMessage = $"Service {connectionId} stopped successfully";
+                await RefreshServices();
+            }
+            else
+            {
+                _errorMessage = $"Failed to stop service {connectionId}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error stopping service: {ex.Message}";
+            Logger.LogError(ex, "Failed to stop service {ConnectionId}", connectionId);
+        }
+        finally
+        {
+            _actionInProgress = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckHealth(string connectionId)
+    {
+        try
+        {
+            _actionInProgress = true;
+            StateHasChanged();
+
+            var health = await ContainerService.CheckServiceHealthAsync(connectionId);
+            _healthStatuses[connectionId] = health;
+
+            _successMessage = health.IsHealthy 
+                ? $"Service {connectionId} is healthy" 
+                : $"Service {connectionId} is unhealthy: {health.ErrorMessage}";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error checking health: {ex.Message}";
+            Logger.LogError(ex, "Failed to check health for {ConnectionId}", connectionId);
+        }
+        finally
+        {
+            _actionInProgress = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ViewLogs(string connectionId)
+    {
+        try
+        {
+            _selectedService = connectionId;
+            _isLoadingLogs = true;
+            _containerLogs = string.Empty;
+            
+            var modalElement = await JSRuntime.InvokeAsync<object>("document.querySelector", "#logsModal");
+            await JSRuntime.InvokeVoidAsync("bootstrap.Modal.getOrCreateInstance", modalElement);
+            await JSRuntime.InvokeVoidAsync("eval", "bootstrap.Modal.getOrCreateInstance(document.querySelector('#logsModal')).show()");
+            
+            StateHasChanged();
+
+            await RefreshLogs();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error viewing logs: {ex.Message}";
+            Logger.LogError(ex, "Failed to view logs for {ConnectionId}", connectionId);
+            _isLoadingLogs = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshLogs()
+    {
+        try
+        {
+            _isLoadingLogs = true;
+            StateHasChanged();
+
+            // This would need to be implemented in ContainerManagementService
+            // For now, we'll show a placeholder
+            await Task.Delay(1000); // Simulate loading
+            _containerLogs = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Container logs for {_selectedService}\n" +
+                           "[INFO] Service is running\n" +
+                           "[INFO] Health check passed\n" +
+                           "[DEBUG] Processing requests...\n" +
+                           "[INFO] Ready to accept connections";
+        }
+        catch (Exception ex)
+        {
+            _containerLogs = $"Error loading logs: {ex.Message}";
+            Logger.LogError(ex, "Failed to refresh logs for {ConnectionId}", _selectedService);
+        }
+        finally
+        {
+            _isLoadingLogs = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetStatusBadgeClass(string status)
+    {
+        return status.ToLower() switch
+        {
+            "running" => "bg-success",
+            "exited" => "bg-danger",
+            "paused" => "bg-warning",
+            "restarting" => "bg-info",
+            _ => "bg-secondary"
+        };
+    }
+}

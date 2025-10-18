@@ -9,11 +9,20 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="9.0.0" />
     <PackageReference Include="Microsoft.Graph" Version="5.80.0" />
-    <PackageReference Include="Microsoft.Identity.Web" Version="3.6.1" />
-    <PackageReference Include="Microsoft.Identity.Web.UI" Version="3.6.1" />
+    <PackageReference Include="Microsoft.Identity.Web" Version="4.0.0" />
+    <PackageReference Include="Microsoft.Identity.Web.UI" Version="4.0.0" />
     <PackageReference Include="Azure.Identity" Version="1.13.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="SharpZipLib" Version="1.4.2" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="IngestionService\**" />
+    <Content Remove="IngestionService\**" />
+    <EmbeddedResource Remove="IngestionService\**" />
+    <None Remove="IngestionService\**" />
   </ItemGroup>
 
 </Project>

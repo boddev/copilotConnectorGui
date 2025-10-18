@@ -74,7 +74,9 @@ builder.Services.AddScoped<SchemaService>();
 builder.Services.AddScoped<AzureBootstrapService>();
 builder.Services.AddScoped<JsonFieldParserService>();
 builder.Services.AddScoped<SemanticLabelMappingService>();
+builder.Services.AddScoped<ExternalConnectionValidationService>();
 builder.Services.AddSingleton<WebTerminalService>();
+builder.Services.AddSingleton<ContainerManagementService>();
 
 // Configure application URLs
 builder.Services.Configure<CopilotConnectorGui.Models.ApplicationUrlsConfiguration>(

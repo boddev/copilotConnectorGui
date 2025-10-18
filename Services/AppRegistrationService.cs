@@ -69,16 +69,26 @@ namespace CopilotConnectorGui.Services
                 // If app creation succeeded, try to grant admin consent using the authenticated user's context
                 if (result.Success)
                 {
+                    bool consentGranted = false;
+                    
                     try
                     {
                         _logger.LogInformation("Attempting to grant admin consent for app: {AppId}", result.ApplicationId);
                         await GrantAdminConsentWithUserContextAsync(user, result.ApplicationId!, tenantId);
                         _logger.LogInformation("Admin consent granted successfully using user context");
+                        consentGranted = true;
                     }
                     catch (Exception consentEx)
                     {
-                        _logger.LogWarning(consentEx, "Could not automatically grant admin consent using user context. Manual consent may be required.");
-                        // Don't fail the entire operation - just log the warning
+                        _logger.LogWarning(consentEx, "Could not automatically grant admin consent using user context. Manual consent will be required.");
+                    }
+                    
+                    // If consent wasn't granted, provide the URL for manual consent
+                    if (!consentGranted)
+                    {
+                        result.AdminConsentRequired = true;
+                        result.AdminConsentUrl = GenerateAdminConsentUrl(result.ApplicationId!, tenantId);
+                        _logger.LogWarning("Admin consent URL: {ConsentUrl}", result.AdminConsentUrl);
                     }
                 }
                 
@@ -166,16 +176,23 @@ namespace CopilotConnectorGui.Services
                 }
 
                 // Try to grant admin consent automatically
+                bool consentGranted = false;
+                string? consentUrl = null;
+                
                 try
                 {
                     _logger.LogInformation("Attempting to grant admin consent for app: {AppId}", createdApp.AppId);
                     await GrantAdminConsentAsync(graphClient, createdApp.AppId, tenantId);
                     _logger.LogInformation("Admin consent granted successfully");
+                    consentGranted = true;
                 }
                 catch (Exception consentEx)
                 {
-                    _logger.LogWarning(consentEx, "Could not automatically grant admin consent. Manual consent may be required.");
-                    // Don't fail the entire operation - just log the warning
+                    _logger.LogWarning(consentEx, "Could not automatically grant admin consent. Manual consent will be required.");
+                    
+                    // Generate admin consent URL for manual consent
+                    consentUrl = GenerateAdminConsentUrl(createdApp.AppId, tenantId);
+                    _logger.LogWarning("Admin consent URL: {ConsentUrl}", consentUrl);
                 }
 
                 return new AppRegistrationResult
@@ -183,7 +200,9 @@ namespace CopilotConnectorGui.Services
                     Success = true,
                     ApplicationId = createdApp.AppId,
                     ClientSecret = secretResult.SecretText,
-                    TenantId = tenantId
+                    TenantId = tenantId,
+                    AdminConsentRequired = !consentGranted,
+                    AdminConsentUrl = consentUrl
                 };
             }
             catch (Exception ex)
@@ -369,6 +388,10 @@ namespace CopilotConnectorGui.Services
                     "8116ae0f-55c2-452d-9944-d18420f5b2c8"  // ExternalItem.ReadWrite.OwnedBy
                 };
 
+                int successCount = 0;
+                int failureCount = 0;
+                List<string> errors = new List<string>();
+
                 foreach (var permissionId in permissionIds)
                 {
                     try
@@ -388,6 +411,7 @@ namespace CopilotConnectorGui.Services
                         if (assignmentResponse.IsSuccessStatusCode)
                         {
                             _logger.LogInformation("Granted permission {PermissionId} to app {AppId}", permissionId, applicationId);
+                            successCount++;
                         }
                         else
                         {
@@ -395,18 +419,40 @@ namespace CopilotConnectorGui.Services
                             if (assignmentError.Contains("Permission being assigned already exists"))
                             {
                                 _logger.LogInformation("Permission {PermissionId} already granted to app {AppId}", permissionId, applicationId);
+                                successCount++;
                             }
                             else
                             {
                                 _logger.LogWarning("Failed to grant permission {PermissionId}: {Error}", permissionId, assignmentError);
+                                failureCount++;
+                                errors.Add($"Permission {permissionId}: {assignmentError}");
                             }
                         }
                     }
                     catch (Exception ex) when (ex.Message.Contains("Permission being assigned already exists"))
                     {
                         _logger.LogInformation("Permission {PermissionId} already granted to app {AppId}", permissionId, applicationId);
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Exception granting permission {PermissionId}", permissionId);
+                        failureCount++;
+                        errors.Add($"Permission {permissionId}: {ex.Message}");
                     }
                 }
+
+                // If no permissions were successfully granted, throw an exception
+                if (successCount == 0 && failureCount > 0)
+                {
+                    var errorMessage = $"Failed to grant admin consent. {failureCount} permission(s) failed. " +
+                                     $"Errors: {string.Join("; ", errors)}";
+                    _logger.LogError("Admin consent failed: {ErrorMessage}", errorMessage);
+                    throw new InvalidOperationException(errorMessage);
+                }
+                
+                _logger.LogInformation("Admin consent completed: {SuccessCount} succeeded, {FailureCount} failed", 
+                    successCount, failureCount);
             }
             catch (Exception ex)
             {

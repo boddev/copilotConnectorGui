@@ -31,6 +31,8 @@ namespace CopilotConnectorGui.Models
         public string TenantId { get; set; } = string.Empty;
         public bool Success { get; set; }
         public string? ErrorMessage { get; set; }
+        public bool AdminConsentRequired { get; set; }
+        public string? AdminConsentUrl { get; set; }
     }
 
     public class SchemaCreationResult

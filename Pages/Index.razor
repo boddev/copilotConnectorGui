@@ -16,6 +16,8 @@
 @inject GraphService GraphService
 @inject JsonFieldParserService JsonFieldParserService
 @inject SemanticLabelMappingService SemanticLabelMappingService
+@inject ContainerManagementService ContainerService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Copilot Connector Setup</PageTitle>
@@ -45,7 +47,19 @@
                                     <i class="bi bi-shield-check"></i> Grant Admin Consent Now
                                 </button>
                                 <button class="btn btn-outline-secondary" @onclick="RetrySchemaCreation">
-                                    <i class="bi bi-arrow-clockwise"></i> Retry Connection Creation
+                                    <i class="bi bi-arrow-clockwise"></i> 
+                                    @{
+                                        bool schemaExistsButContainerFailed = (_schemaResult != null && _schemaResult.Success && !string.IsNullOrEmpty(_schemaResult.ConnectionId)) ||
+                                                                             (!string.IsNullOrEmpty(_errorMessage) && _errorMessage.Contains("Schema created but ingestion service deployment failed"));
+                                    }
+                                    @if (schemaExistsButContainerFailed)
+                                    {
+                                        <span>Retry Container Deployment</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Retry Connection Creation</span>
+                                    }
                                 </button>
                             </div>
                         }
@@ -55,7 +69,20 @@
                             <ol class="mb-0">
                                 <li><strong>Grant Admin Consent:</strong> Click the "Grant Admin Consent Now" button above</li>
                                 <li><strong>Wait:</strong> Allow 2-3 minutes for the permissions to propagate</li>
-                                <li><strong>Retry:</strong> Click "Retry Connection Creation" to attempt the process again</li>
+                                <li><strong>Retry:</strong> Click the retry button to attempt the 
+                                    @{
+                                        bool schemaExistsForInstructions = (_schemaResult != null && _schemaResult.Success && !string.IsNullOrEmpty(_schemaResult.ConnectionId)) ||
+                                                                           (!string.IsNullOrEmpty(_errorMessage) && _errorMessage.Contains("Schema created but ingestion service deployment failed"));
+                                    }
+                                    @if (schemaExistsForInstructions)
+                                    {
+                                        <span>container deployment</span>
+                                    }
+                                    else
+                                    {
+                                        <span>connection creation process</span>
+                                    }
+                                     again</li>
                             </ol>
                         </div>
                     </div>
@@ -773,9 +800,62 @@
                                     </div>
                                 </div>
 
-                                <div class="mt-4 d-flex gap-2">
-                                    <button class="btn btn-primary" @onclick="StartOver">Create Another Connection</button>
-                                    <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-secondary">Sign Out</a>
+                                <div class="mt-4">
+                                    <h5><i class="bi bi-rocket"></i> Next Steps</h5>
+                                    <div class="alert alert-info">
+                                        <h6><i class="bi bi-lightbulb"></i> Deploy Ingestion Service</h6>
+                                        <p class="mb-2">Deploy a containerized ingestion service to automatically handle external item creation:</p>
+                                        
+                                        @if (_isDeployingContainer)
+                                        {
+                                            <div class="d-flex align-items-center">
+                                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                                <span>Deploying ingestion service container...</span>
+                                            </div>
+                                        }
+                                        else if (_containerDeploymentResult != null)
+                                        {
+                                            @if (_containerDeploymentResult.Success)
+                                            {
+                                                <div class="alert alert-success">
+                                                    <h6><i class="bi bi-check-circle"></i> Container Deployed Successfully!</h6>
+                                                    <p class="mb-2"><strong>Service URL:</strong> <a href="@_containerDeploymentResult.DeploymentResult!.ServiceUrl" target="_blank">@_containerDeploymentResult.DeploymentResult.ServiceUrl</a></p>
+                                                    <p class="mb-2"><strong>API Documentation:</strong> <a href="@(_containerDeploymentResult.DeploymentResult.ServiceUrl)/swagger" target="_blank">Swagger UI</a></p>
+                                                    <p class="mb-0"><strong>Container:</strong> @_containerDeploymentResult.DeploymentResult.ContainerName</p>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="alert alert-warning">
+                                                    <h6><i class="bi bi-exclamation-triangle"></i> Container Deployment Failed</h6>
+                                                    <p>@_containerDeploymentResult.ErrorMessage</p>
+                                                    <div class="d-flex gap-2 mt-2">
+                                                        <button class="btn btn-outline-primary" @onclick="DeployIngestionService" disabled="@_isDeployingContainer">
+                                                            @if (_isDeployingContainer)
+                                                            {
+                                                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                                            }
+                                                            <i class="bi bi-arrow-clockwise"></i> Retry Container Deployment
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-success" @onclick="DeployIngestionService">
+                                                <i class="bi bi-cloud-upload"></i> Deploy Ingestion Service
+                                            </button>
+                                        }
+                                    </div>
+                                    
+                                    <div class="d-flex gap-2">
+                                        <a href="/ingestion-services" class="btn btn-outline-primary">
+                                            <i class="bi bi-hdd-stack"></i> View All Services
+                                        </a>
+                                        <button class="btn btn-primary" @onclick="StartOver">Create Another Connection</button>
+                                        <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-secondary">Sign Out</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -918,12 +998,19 @@
     private string _statusMessage = string.Empty;
     private SetupStep _currentStep = SetupStep.Configuration;
     private bool _forceShowUI = false; // Force show UI during processing to prevent disappearing
+    
+    // Container deployment variables
+    private bool _isDeployingContainer = false;
+    private CompleteDeploymentResult? _containerDeploymentResult;
 
     [CascadingParameter]
     public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        // Try to restore state if we're coming back from admin consent
+        await TryRestoreStateAfterConsent();
+        
         if (AuthenticationStateTask != null)
         {
             var authState = await AuthenticationStateTask;
@@ -931,7 +1018,7 @@
             {
                 // Extract tenant ID from the authenticated user's claims
                 var tenantIdClaim = authState.User.FindFirst("tid") ?? authState.User.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid");
-                if (tenantIdClaim != null)
+                if (tenantIdClaim != null && string.IsNullOrEmpty(_configuration.TenantId))
                 {
                     _configuration.TenantId = tenantIdClaim.Value;
                     StateHasChanged();
@@ -1266,6 +1353,15 @@
             _currentStep = SetupStep.AppRegistrationCreated;
             StateHasChanged();
 
+            // Check if admin consent is required (couldn't be granted automatically)
+            if (_appRegistrationResult.AdminConsentRequired)
+            {
+                _currentStep = SetupStep.AdminConsentRequired;
+                _isProcessing = false;
+                StateHasChanged();
+                return;
+            }
+
             // Wait for app registration and client secret to propagate
             // This helps prevent AADSTS7000215 errors due to timing issues
             await Task.Delay(30000); // Wait 30 seconds for credential propagation
@@ -1455,6 +1551,9 @@
     {
         try
         {
+            // Save state before opening consent window to survive auth transitions
+            await SaveStateBeforeConsent();
+            
             var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId);
             await JSRuntime.InvokeVoidAsync("window.open", consentUrl, "_blank");
         }
@@ -1481,7 +1580,20 @@
             _currentStep = SetupStep.AppRegistrationCreated;
             StateHasChanged();
 
-            // Retry the schema creation
+            // Check if we already have a successful schema creation but failed container deployment
+            bool schemaExistsButContainerFailed = (_schemaResult != null && _schemaResult.Success && !string.IsNullOrEmpty(_schemaResult.ConnectionId)) ||
+                                                 (!string.IsNullOrEmpty(_errorMessage) && _errorMessage.Contains("Schema created but ingestion service deployment failed"));
+
+            if (schemaExistsButContainerFailed)
+            {
+                // Schema/connection already exists, only retry the ingestion service deployment
+                LogActivity("Schema and connection already exist. Retrying ingestion service deployment only.", ActivityLogType.Info);
+                await DeployIngestionService();
+                return;
+            }
+
+            // Schema creation failed or doesn't exist, so retry the full schema creation
+            LogActivity("Retrying schema and connection creation...", ActivityLogType.Info);
             _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
                 _configuration.TenantId,
                 _appRegistrationResult.ApplicationId,
@@ -1494,17 +1606,20 @@
             {
                 _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection.";
                 _currentStep = SetupStep.Configuration;
+                LogActivity($"Schema creation failed: {_schemaResult.ErrorMessage}", ActivityLogType.Error);
             }
             else
             {
                 _currentStep = SetupStep.Completed;
                 _successMessage = "Setup completed successfully! Your external connection is ready to use.";
+                LogActivity("Schema and connection created successfully!", ActivityLogType.Success);
             }
         }
         catch (Exception ex)
         {
             _errorMessage = $"An error occurred during retry: {ex.Message}";
             _currentStep = SetupStep.Configuration;
+            LogActivity($"Error during retry: {ex.Message}", ActivityLogType.Error);
         }
         finally
         {
@@ -1637,6 +1752,9 @@
     {
         try
         {
+            // Save state before opening consent window to survive auth transitions
+            await SaveStateBeforeConsent();
+            
             var consentUrl = AppRegistrationService.GenerateAdminConsentUrl(clientId, tenantId);
             await JSRuntime.InvokeVoidAsync("window.open", consentUrl, "_blank");
         }
@@ -1817,7 +1935,7 @@
             else
             {
                 // Create app registration first
-                _appRegistrationResult = await AppRegistrationService.CreateAppRegistrationAsync(user, mappingConfig.ConnectionName);
+                _appRegistrationResult = await AppRegistrationService.CreateAppRegistrationAsync(user, _configuration.TenantId);
 
                 if (!_appRegistrationResult.Success)
                 {
@@ -1827,6 +1945,15 @@
 
                 _currentStep = SetupStep.AppRegistrationCreated;
                 StateHasChanged();
+
+                // Check if admin consent is required (couldn't be granted automatically)
+                if (_appRegistrationResult.AdminConsentRequired)
+                {
+                    _currentStep = SetupStep.AdminConsentRequired;
+                    _isProcessing = false;
+                    StateHasChanged();
+                    return;
+                }
 
                 // Wait for app registration and client secret to propagate
                 await Task.Delay(30000);
@@ -1870,6 +1997,171 @@
         _errorMessage = string.Empty;
         _successMessage = string.Empty;
         StateHasChanged();
+    }
+
+    private async Task DeployIngestionService()
+    {
+        if (_appRegistrationResult == null || _schemaResult == null)
+        {
+            _errorMessage = "Missing required data for container deployment";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            _isDeployingContainer = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            // Get the current user's tenant ID instead of using app registration tenant ID
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var currentTenantId = user.FindFirst("tid")?.Value ?? user.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid")?.Value;
+
+            if (string.IsNullOrEmpty(currentTenantId))
+            {
+                _errorMessage = "Unable to determine current tenant ID from user authentication";
+                StateHasChanged();
+                return;
+            }
+
+            // Set status message directly
+            _statusMessage = "🔍 Parsing JSON structure and creating field mappings...";
+            StateHasChanged();
+
+            // Create schema mapping configuration for the existing connection
+            var mappingConfig = JsonFieldParserService.ParseJsonToSchema(_configuration.JsonSample);
+            SemanticLabelMappingService.AssignSemanticLabels(mappingConfig.Fields);
+
+            _statusMessage = "🐳 Building and deploying ingestion service container...";
+            StateHasChanged();
+            
+            // Deploy container for the EXISTING connection (don't create a new connection)
+            var deploymentResult = await ContainerService.DeployIngestionServiceAsync(
+                _schemaResult.ConnectionId!,  // Use EXISTING connection ID
+                currentTenantId,  // Use current user's tenant ID
+                _appRegistrationResult.ApplicationId,
+                _appRegistrationResult.ClientSecret,
+                mappingConfig);
+
+            _containerDeploymentResult = new CompleteDeploymentResult
+            {
+                Success = deploymentResult.Success,
+                ErrorMessage = deploymentResult.ErrorMessage,
+                SchemaResult = _schemaResult, // Use existing schema result
+                DeploymentResult = deploymentResult,
+                MappingConfiguration = mappingConfig
+            };
+
+            if (deploymentResult.Success)
+            {
+                _successMessage = "🎉 Ingestion service deployed successfully! Your external connection is now ready to receive data.";
+            }
+            else
+            {
+                _errorMessage = $"Container deployment failed: {deploymentResult.ErrorMessage}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error during deployment: {ex.Message}";
+        }
+        finally
+        {
+            _isDeployingContainer = false;
+            _statusMessage = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    // State persistence methods to handle auth transitions during consent
+    private async Task SaveStateBeforeConsent()
+    {
+        try
+        {
+            if (_appRegistrationResult == null) return;
+            
+            var state = new
+            {
+                AppId = _appRegistrationResult.ApplicationId,
+                TenantId = _appRegistrationResult.TenantId,
+                ClientSecret = _appRegistrationResult.ClientSecret,
+                ConnectionName = _configuration.ConnectionName,
+                ConnectionDescription = _configuration.ConnectionDescription,
+                JsonSample = _configuration.JsonSample,
+                ConfigTenantId = _configuration.TenantId,
+                CurrentStep = _currentStep.ToString(),
+                Timestamp = DateTime.UtcNow.Ticks
+            };
+            
+            var json = System.Text.Json.JsonSerializer.Serialize(state);
+            await JSRuntime.InvokeVoidAsync("sessionStorage.setItem", "copilotSetupState", json);
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail - state save is best effort
+            Console.WriteLine($"Failed to save state: {ex.Message}");
+        }
+    }
+    
+    private async Task<bool> TryRestoreStateAfterConsent()
+    {
+        try
+        {
+            var json = await JSRuntime.InvokeAsync<string>("sessionStorage.getItem", "copilotSetupState");
+            if (string.IsNullOrEmpty(json)) return false;
+            
+            var state = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+            
+            // Check if state is recent (within last 10 minutes)
+            if (state.TryGetProperty("Timestamp", out var timestamp))
+            {
+                var stateTime = new DateTime(timestamp.GetInt64());
+                if (DateTime.UtcNow - stateTime > TimeSpan.FromMinutes(10))
+                {
+                    // State is too old, clear it
+                    await JSRuntime.InvokeVoidAsync("sessionStorage.removeItem", "copilotSetupState");
+                    return false;
+                }
+            }
+            
+            // Restore app registration result
+            _appRegistrationResult = new AppRegistrationResult
+            {
+                Success = true,
+                ApplicationId = state.GetProperty("AppId").GetString() ?? "",
+                TenantId = state.GetProperty("TenantId").GetString() ?? "",
+                ClientSecret = state.GetProperty("ClientSecret").GetString() ?? "",
+                AdminConsentRequired = true // We're restoring after consent was needed
+            };
+            
+            // Restore configuration
+            _configuration.ConnectionName = state.GetProperty("ConnectionName").GetString() ?? "";
+            _configuration.ConnectionDescription = state.GetProperty("ConnectionDescription").GetString() ?? "";
+            _configuration.JsonSample = state.GetProperty("JsonSample").GetString() ?? "";
+            if (state.TryGetProperty("ConfigTenantId", out var configTenantId))
+            {
+                _configuration.TenantId = configTenantId.GetString() ?? "";
+            }
+            
+            // Restore step - set to AdminConsentRequired so user sees the "Continue Setup" button
+            if (state.TryGetProperty("CurrentStep", out var stepJson) && 
+                Enum.TryParse<SetupStep>(stepJson.GetString(), out var step))
+            {
+                _currentStep = step;
+            }
+            
+            // Clear the saved state
+            await JSRuntime.InvokeVoidAsync("sessionStorage.removeItem", "copilotSetupState");
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to restore state: {ex.Message}");
+            return false;
+        }
     }
 
     public void Dispose()

@@ -106,7 +106,7 @@ namespace CopilotConnectorGui.Services
                     field.IsSearchable = false;
                     field.IsQueryable = true;
                     field.IsRetrievable = true;
-                    field.IsRefinable = true;
+                    field.IsRefinable = false; // Boolean fields cannot be refinable in Microsoft Graph
                     break;
                 case FieldDataType.StringCollection:
                     field.IsSearchable = true;
@@ -164,12 +164,35 @@ namespace CopilotConnectorGui.Services
 
         private string SanitizeFieldName(string fieldName)
         {
-            // Remove special characters and ensure it starts with a letter
-            var sanitized = System.Text.RegularExpressions.Regex.Replace(fieldName, @"[^a-zA-Z0-9_]", "_");
+            // Microsoft Graph External Connections only allow alphanumeric characters
+            // Convert to camelCase and remove invalid characters
             
-            if (char.IsDigit(sanitized[0]))
-                sanitized = "field_" + sanitized;
-
+            // Split by common separators and non-alphanumeric characters
+            var parts = System.Text.RegularExpressions.Regex.Split(fieldName, @"[^a-zA-Z0-9]+")
+                .Where(part => !string.IsNullOrEmpty(part))
+                .ToArray();
+            
+            if (parts.Length == 0)
+                return "field"; // fallback name
+            
+            // Convert to camelCase: first part lowercase, subsequent parts title case
+            var sanitized = parts[0].ToLowerInvariant();
+            for (int i = 1; i < parts.Length; i++)
+            {
+                if (parts[i].Length > 0)
+                {
+                    sanitized += char.ToUpperInvariant(parts[i][0]) + parts[i].Substring(1).ToLowerInvariant();
+                }
+            }
+            
+            // Ensure it starts with a letter (if it doesn't, prepend 'field')
+            if (sanitized.Length == 0 || !char.IsLetter(sanitized[0]))
+                sanitized = "field" + (sanitized.Length > 0 ? char.ToUpperInvariant(sanitized[0]) + sanitized.Substring(1) : "");
+                
+            // Ensure maximum length of 32 characters
+            if (sanitized.Length > 32)
+                sanitized = sanitized.Substring(0, 32);
+                
             return sanitized;
         }
 
@@ -205,7 +228,7 @@ namespace CopilotConnectorGui.Services
                 {
                     // Add nested fields with prefixed names
                     var nestedFlattened = FlattenFields(field.NestedFields, 
-                        string.IsNullOrEmpty(prefix) ? field.FieldName : $"{prefix}_{field.FieldName}");
+                        string.IsNullOrEmpty(prefix) ? field.FieldName : SanitizeFieldName($"{prefix}_{field.FieldName}"));
                     flattenedFields.AddRange(nestedFlattened);
                 }
                 else
@@ -213,7 +236,7 @@ namespace CopilotConnectorGui.Services
                     // Add the field itself with prefix if any
                     var flatField = new SchemaFieldDefinition
                     {
-                        FieldName = string.IsNullOrEmpty(prefix) ? field.FieldName : $"{prefix}_{field.FieldName}",
+                        FieldName = string.IsNullOrEmpty(prefix) ? field.FieldName : SanitizeFieldName($"{prefix}_{field.FieldName}"),
                         DisplayName = string.IsNullOrEmpty(prefix) ? field.DisplayName : $"{CreateDisplayName(prefix)} {field.DisplayName}",
                         DataType = field.DataType,
                         IsRequired = field.IsRequired,

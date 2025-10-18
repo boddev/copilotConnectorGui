@@ -12,11 +12,22 @@ namespace CopilotConnectorGui.Services
     {
         private readonly GraphService _graphService;
         private readonly ILogger<SchemaService> _logger;
+        private readonly ContainerManagementService _containerService;
+        private readonly JsonFieldParserService _jsonParser;
+        private readonly SemanticLabelMappingService _semanticMapper;
 
-        public SchemaService(GraphService graphService, ILogger<SchemaService> logger)
+        public SchemaService(
+            GraphService graphService, 
+            ILogger<SchemaService> logger,
+            ContainerManagementService containerService,
+            JsonFieldParserService jsonParser,
+            SemanticLabelMappingService semanticMapper)
         {
             _graphService = graphService;
             _logger = logger;
+            _containerService = containerService;
+            _jsonParser = jsonParser;
+            _semanticMapper = semanticMapper;
         }
 
         public async Task<SchemaCreationResult> CreateSchemaAndConnectionWithUserContextAsync(
@@ -325,15 +336,19 @@ namespace CopilotConnectorGui.Services
                     await graphClient.External.Connections.PostAsync(connection);
                     _logger.LogInformation("External Connection created successfully");
                 }
-                catch (Exception connectionEx)
+                catch (Microsoft.Graph.Models.ODataErrors.ODataError odataEx)
                 {
-                    _logger.LogError(connectionEx, "Failed to create External Connection");
+                    _logger.LogError(odataEx, "Failed to create External Connection - ODataError");
+                    _logger.LogError("ODataError Code: {Code}, Message: {Message}", 
+                        odataEx.Error?.Code, odataEx.Error?.Message);
                     
                     var errorMessage = "Failed to create External Connection. ";
+                    var errorCode = odataEx.Error?.Code ?? "";
+                    var errorMsg = odataEx.Error?.Message ?? odataEx.Message;
                     
-                    if (connectionEx.Message.Contains("Current authenticated context is not valid") || 
-                        connectionEx.Message.Contains("user sign-in") ||
-                        connectionEx.Message.Contains("Insufficient privileges"))
+                    if (errorMsg.Contains("Current authenticated context is not valid") || 
+                        errorMsg.Contains("user sign-in") ||
+                        errorMsg.Contains("Insufficient privileges"))
                     {
                         errorMessage += "The app registration needs admin consent for External Connection permissions.\n\n" +
                                       "🔧 SOLUTION:\n" +
@@ -345,24 +360,24 @@ namespace CopilotConnectorGui.Services
                                       "• ExternalItem.ReadWrite.OwnedBy (Application permission)\n\n" +
                                       "Note: Application permissions always require admin consent - this is a Microsoft security requirement.";
                     }
-                    else if (connectionEx.Message.Contains("invalid_client") || connectionEx.Message.Contains("AADSTS70002"))
+                    else if (errorMsg.Contains("invalid_client") || errorMsg.Contains("AADSTS70002"))
                     {
                         errorMessage += "The client credentials are invalid. Please verify:\n" +
                                       "• The Client ID and Client Secret are correct\n" +
                                       "• The app registration exists in this tenant\n" +
                                       "• The client secret hasn't expired";
                     }
-                    else if (connectionEx.Message.Contains("AADSTS7000215"))
+                    else if (errorMsg.Contains("AADSTS7000215"))
                     {
                         errorMessage += "Invalid client secret. Please:\n" +
                                       "1. Wait 2-3 minutes for the new secret to become active\n" +
                                       "2. Try the 'Retry Connection Creation' button\n" +
                                       "3. Verify the client secret value (not ID) was used";
                     }
-                    else if (connectionEx.Message.Contains("insufficient_claims") || 
-                             connectionEx.Message.Contains("AADSTS65001") ||
-                             connectionEx.Message.Contains("Forbidden") ||
-                             connectionEx.Message.Contains("403"))
+                    else if (errorMsg.Contains("insufficient_claims") || 
+                             errorMsg.Contains("AADSTS65001") ||
+                             errorMsg.Contains("Forbidden") ||
+                             errorMsg.Contains("403"))
                     {
                         errorMessage += "Admin consent is required for External Connection permissions.\n\n" +
                                       $"🔧 SOLUTION:\n" +
@@ -372,7 +387,7 @@ namespace CopilotConnectorGui.Services
                     }
                     else
                     {
-                        errorMessage += $"Unexpected error: {connectionEx.Message}\n\n" +
+                        errorMessage += $"Unexpected error: {errorMsg}\n\n" +
                                       "This could be due to:\n" +
                                       "• Missing admin consent\n" +
                                       "• Timing issues with newly created credentials\n" +
@@ -392,6 +407,61 @@ namespace CopilotConnectorGui.Services
 
                 _logger.LogInformation("Creating schema with {PropertyCount} properties", schema.Values.Count);
 
+                // Log each property for debugging
+                foreach (var prop in schema.Values)
+                {
+                    var labelsStr = prop.Labels != null && prop.Labels.Any() 
+                        ? string.Join(", ", prop.Labels.Select(l => l.ToString())) 
+                        : "None";
+                    
+                    _logger.LogInformation("Schema Property: Name={Name}, Type={Type}, IsSearchable={IsSearchable}, IsQueryable={IsQueryable}, IsRetrievable={IsRetrievable}, IsRefinable={IsRefinable}, Labels=[{Labels}]",
+                        prop.Name, prop.Type, prop.IsSearchable, prop.IsQueryable, prop.IsRetrievable, prop.IsRefinable, labelsStr);
+                        
+                    // Validate property name (must be alphanumeric + underscore only)
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(prop.Name ?? "", @"^[a-zA-Z0-9_]+$"))
+                    {
+                        _logger.LogWarning("Property name '{Name}' contains invalid characters. Only alphanumeric and underscore allowed.", prop.Name);
+                    }
+                }
+
+                // Validate we have at least title, url, and iconUrl with proper labels (required for Copilot)
+                var titleProp = schema.Values.FirstOrDefault(p => p.Name == "title");
+                var urlProp = schema.Values.FirstOrDefault(p => p.Name == "url");
+                var iconUrlProp = schema.Values.FirstOrDefault(p => p.Name == "iconUrl");
+                
+                if (titleProp == null)
+                {
+                    var errorMsg = "Schema must contain a 'title' property with Title label";
+                    _logger.LogError(errorMsg);
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = errorMsg
+                    };
+                }
+                
+                if (urlProp == null)
+                {
+                    var errorMsg = "Schema must contain a 'url' property with Url label";
+                    _logger.LogError(errorMsg);
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = errorMsg
+                    };
+                }
+
+                if (iconUrlProp == null)
+                {
+                    var errorMsg = "Schema must contain an 'iconUrl' property with IconUrl label (required for Copilot)";
+                    _logger.LogError(errorMsg);
+                    return new SchemaCreationResult
+                    {
+                        Success = false,
+                        ErrorMessage = errorMsg
+                    };
+                }
+
                 // Create and register the schema
                 var schemaRequest = new Microsoft.Graph.Models.ExternalConnectors.Schema
                 {
@@ -399,8 +469,40 @@ namespace CopilotConnectorGui.Services
                     Properties = schema.Values.ToList()
                 };
 
-                await graphClient.External.Connections[connectionId].Schema.PatchAsync(schemaRequest);
-                _logger.LogInformation("Schema registration submitted");
+                _logger.LogInformation("Submitting schema registration for connection {ConnectionId}", connectionId);
+                _logger.LogInformation("Schema JSON being sent: {SchemaJson}", System.Text.Json.JsonSerializer.Serialize(schemaRequest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                
+                try
+                {
+                    await graphClient.External.Connections[connectionId].Schema.PatchAsync(schemaRequest);
+                    _logger.LogInformation("Schema registration submitted");
+                }
+                catch (Microsoft.Graph.Models.ODataErrors.ODataError schemaOdataEx)
+                {
+                    _logger.LogError(schemaOdataEx, "Failed to create schema - ODataError");
+                    _logger.LogError("Schema ODataError Code: {Code}, Message: {Message}", 
+                        schemaOdataEx.Error?.Code, schemaOdataEx.Error?.Message);
+                    
+                    // Log additional error details if available
+                    if (schemaOdataEx.Error?.Details != null && schemaOdataEx.Error.Details.Any())
+                    {
+                        _logger.LogError("Additional error details:");
+                        foreach (var detail in schemaOdataEx.Error.Details)
+                        {
+                            _logger.LogError("  - Code: {Code}, Message: {Message}, Target: {Target}", 
+                                detail.Code, detail.Message, detail.Target);
+                        }
+                    }
+                    
+                    // Try to get inner exception details
+                    if (schemaOdataEx.InnerException != null)
+                    {
+                        _logger.LogError("Inner exception: {InnerException}", schemaOdataEx.InnerException.Message);
+                    }
+                    
+                    var errorMsg = schemaOdataEx.Error?.Message ?? schemaOdataEx.Message;
+                    throw new InvalidOperationException($"Schema creation failed: {errorMsg}. Check the schema properties logged above for issues.", schemaOdataEx);
+                }
 
                 // Wait for schema registration
                 await WaitForSchemaRegistration(graphClient, connectionId);
@@ -459,54 +561,8 @@ namespace CopilotConnectorGui.Services
             {
                 var jsonObject = JObject.Parse(jsonSample);
                 
-                foreach (var property in jsonObject.Properties())
-                {
-                    var originalPropertyName = property.Name;
-                    var propertyName = NormalizePropertyName(originalPropertyName);
-                    var propertyValue = property.Value;
-                    
-                    var schemaProperty = new Microsoft.Graph.Models.ExternalConnectors.Property
-                    {
-                        Name = propertyName,
-                        Type = GetPropertyType(propertyValue),
-                        IsSearchable = true,
-                        IsQueryable = true,
-                        IsRetrievable = true,
-                        IsRefinable = false
-                    };
-
-                    // Set some common properties as refinable if they're strings
-                    if (schemaProperty.Type == Microsoft.Graph.Models.ExternalConnectors.PropertyType.String &&
-                        (propertyName.ToLower().Contains("category") || 
-                         propertyName.ToLower().Contains("type") ||
-                         propertyName.ToLower().Contains("status")))
-                    {
-                        schemaProperty.IsRefinable = true;
-                    }
-
-                    properties[propertyName] = schemaProperty;
-                }
-
-                // Add standard properties
-                properties["title"] = new Microsoft.Graph.Models.ExternalConnectors.Property
-                {
-                    Name = "title",
-                    Type = Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
-                    IsSearchable = true,
-                    IsQueryable = true,
-                    IsRetrievable = true,
-                    IsRefinable = false
-                };
-
-                properties["url"] = new Microsoft.Graph.Models.ExternalConnectors.Property
-                {
-                    Name = "url",
-                    Type = Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
-                    IsSearchable = false,
-                    IsQueryable = false,
-                    IsRetrievable = true,
-                    IsRefinable = false
-                };
+                // Flatten nested properties recursively
+                FlattenJsonProperties(jsonObject, "", properties);
             }
             catch (Exception ex)
             {
@@ -514,7 +570,181 @@ namespace CopilotConnectorGui.Services
                 throw;
             }
 
+            // Add standard properties only if they don't already exist
+            if (!properties.ContainsKey("title"))
+            {
+                properties["title"] = new Microsoft.Graph.Models.ExternalConnectors.Property
+                {
+                    Name = "title",
+                    Type = Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
+                    IsSearchable = true,
+                    IsQueryable = true,
+                    IsRetrievable = true,
+                    IsRefinable = false,
+                    Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>
+                    {
+                        Microsoft.Graph.Models.ExternalConnectors.Label.Title
+                    }
+                };
+            }
+            else
+            {
+                // If title exists, add the label to it
+                if (properties["title"].Labels == null)
+                {
+                    properties["title"].Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>();
+                }
+                var titleLabels = properties["title"].Labels;
+                if (titleLabels != null && !titleLabels.Contains(Microsoft.Graph.Models.ExternalConnectors.Label.Title))
+                {
+                    titleLabels.Add(Microsoft.Graph.Models.ExternalConnectors.Label.Title);
+                }
+            }
+
+            if (!properties.ContainsKey("url"))
+            {
+                properties["url"] = new Microsoft.Graph.Models.ExternalConnectors.Property
+                {
+                    Name = "url",
+                    Type = Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
+                    IsSearchable = false,
+                    IsQueryable = false,
+                    IsRetrievable = true,
+                    IsRefinable = false,
+                    Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>
+                    {
+                        Microsoft.Graph.Models.ExternalConnectors.Label.Url
+                    }
+                };
+            }
+            else
+            {
+                // If url exists, add the label to it
+                if (properties["url"].Labels == null)
+                {
+                    properties["url"].Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>();
+                }
+                var urlLabels = properties["url"].Labels;
+                if (urlLabels != null && !urlLabels.Contains(Microsoft.Graph.Models.ExternalConnectors.Label.Url))
+                {
+                    urlLabels.Add(Microsoft.Graph.Models.ExternalConnectors.Label.Url);
+                }
+            }
+
+            // Add iconUrl property - required for Copilot
+            if (!properties.ContainsKey("iconUrl"))
+            {
+                properties["iconUrl"] = new Microsoft.Graph.Models.ExternalConnectors.Property
+                {
+                    Name = "iconUrl",
+                    Type = Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
+                    IsSearchable = false,
+                    IsQueryable = false,
+                    IsRetrievable = true,
+                    IsRefinable = false,
+                    Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>
+                    {
+                        Microsoft.Graph.Models.ExternalConnectors.Label.IconUrl
+                    }
+                };
+            }
+            else
+            {
+                // If iconUrl exists, add the label to it
+                if (properties["iconUrl"].Labels == null)
+                {
+                    properties["iconUrl"].Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>();
+                }
+                var iconLabels = properties["iconUrl"].Labels;
+                if (iconLabels != null && !iconLabels.Contains(Microsoft.Graph.Models.ExternalConnectors.Label.IconUrl))
+                {
+                    iconLabels.Add(Microsoft.Graph.Models.ExternalConnectors.Label.IconUrl);
+                }
+            }
+
             return properties;
+        }
+
+        private void FlattenJsonProperties(JObject jsonObject, string prefix, Dictionary<string, Microsoft.Graph.Models.ExternalConnectors.Property> properties)
+        {
+            // Reserved property names that should not be included in the schema
+            var reservedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) 
+            { 
+                "id", "content", "acl", "acls", "properties" 
+            };
+            
+            foreach (var property in jsonObject.Properties())
+            {
+                var originalPropertyName = property.Name;
+                var propertyValue = property.Value;
+                
+                // Skip reserved property names
+                if (reservedNames.Contains(originalPropertyName))
+                {
+                    // If it's the "properties" object, flatten its contents
+                    if (originalPropertyName.Equals("properties", StringComparison.OrdinalIgnoreCase) && 
+                        propertyValue.Type == JTokenType.Object)
+                    {
+                        var nestedObject = propertyValue as JObject;
+                        if (nestedObject != null)
+                        {
+                            FlattenJsonProperties(nestedObject, "", properties);
+                        }
+                    }
+                    continue;
+                }
+                
+                // Skip if it's a nested object - flatten it instead
+                if (propertyValue.Type == JTokenType.Object)
+                {
+                    var nestedObject = propertyValue as JObject;
+                    if (nestedObject != null)
+                    {
+                        // Recursively flatten nested properties
+                        FlattenJsonProperties(nestedObject, "", properties);
+                    }
+                    continue;
+                }
+                
+                // Skip arrays of objects for now (complex type not supported in simple schemas)
+                if (propertyValue.Type == JTokenType.Array)
+                {
+                    var array = propertyValue as JArray;
+                    if (array != null && array.Count > 0 && array[0].Type == JTokenType.Object)
+                    {
+                        continue;
+                    }
+                }
+                
+                var propertyName = NormalizePropertyName(originalPropertyName);
+                
+                // Skip if we've already added this property
+                if (properties.ContainsKey(propertyName))
+                {
+                    continue;
+                }
+                
+                var propertyType = GetPropertyType(propertyValue);
+                
+                // Only String and StringCollection can be searchable per Microsoft Graph API requirements
+                bool canBeSearchable = propertyType == Microsoft.Graph.Models.ExternalConnectors.PropertyType.String || 
+                                      propertyType == Microsoft.Graph.Models.ExternalConnectors.PropertyType.StringCollection;
+                
+                var schemaProperty = new Microsoft.Graph.Models.ExternalConnectors.Property
+                {
+                    Name = propertyName,
+                    Type = propertyType,
+                    IsSearchable = canBeSearchable,
+                    IsQueryable = true,
+                    IsRetrievable = true,
+                    IsRefinable = false
+                };
+
+                // Note: Searchable and refinable are mutually exclusive
+                // We prioritize searchable for better search experience
+
+                properties[propertyName] = schemaProperty;
+            }
         }
 
         private string GetApiPropertyType(Microsoft.Graph.Models.ExternalConnectors.PropertyType? propertyType)
@@ -755,10 +985,26 @@ namespace CopilotConnectorGui.Services
                 await Task.Delay(2000, cancellationToken);
 
                 // Create schema from mapping configuration
-                var schemaRequest = new
+                var properties = new List<object>();
+                
+                // Track if we have required labels
+                bool hasTitleLabel = false;
+                bool hasUrlLabel = false;
+                
+                foreach (var field in mappingConfig.Fields)
                 {
-                    baseType = "microsoft.graph.externalItem",
-                    properties = mappingConfig.Fields.Select(field => new
+                    var labels = new List<string>();
+                    
+                    if (field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None)
+                    {
+                        var labelValue = field.SemanticLabel.ToString()!.ToLowerInvariant();
+                        labels.Add(labelValue);
+                        
+                        if (labelValue == "title") hasTitleLabel = true;
+                        if (labelValue == "url") hasUrlLabel = true;
+                    }
+                    
+                    properties.Add(new
                     {
                         name = field.FieldName,
                         type = GetApiPropertyTypeFromFieldType(field.DataType),
@@ -766,10 +1012,46 @@ namespace CopilotConnectorGui.Services
                         isQueryable = field.IsQueryable,
                         isRetrievable = field.IsRetrievable,
                         isRefinable = field.IsRefinable,
-                        labels = field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None 
-                            ? new[] { field.SemanticLabel.ToString()!.ToLowerInvariant() } 
-                            : Array.Empty<string>()
-                    }).ToArray()
+                        labels = labels.ToArray()
+                    });
+                }
+                
+                // Ensure we have required title property
+                if (!hasTitleLabel)
+                {
+                    _logger.LogWarning("No field with 'title' label found. Adding default 'title' property.");
+                    properties.Add(new
+                    {
+                        name = "title",
+                        type = "string",
+                        isSearchable = true,
+                        isQueryable = true,
+                        isRetrievable = true,
+                        isRefinable = false,
+                        labels = new[] { "title" }
+                    });
+                }
+                
+                // Ensure we have required url property
+                if (!hasUrlLabel)
+                {
+                    _logger.LogWarning("No field with 'url' label found. Adding default 'url' property.");
+                    properties.Add(new
+                    {
+                        name = "url",
+                        type = "string",
+                        isSearchable = false,
+                        isQueryable = false,
+                        isRetrievable = true,
+                        isRefinable = false,
+                        labels = new[] { "url" }
+                    });
+                }
+                
+                var schemaRequest = new
+                {
+                    baseType = "microsoft.graph.externalItem",
+                    properties = properties.ToArray()
                 };
 
                 var schemaJson = JsonConvert.SerializeObject(schemaRequest);
@@ -870,10 +1152,26 @@ namespace CopilotConnectorGui.Services
                 await Task.Delay(2000, cancellationToken);
 
                 // Create schema from mapping configuration
-                var schemaRequest = new
+                var properties = new List<object>();
+                
+                // Track if we have required labels
+                bool hasTitleLabel = false;
+                bool hasUrlLabel = false;
+                
+                foreach (var field in mappingConfig.Fields)
                 {
-                    baseType = "microsoft.graph.externalItem",
-                    properties = mappingConfig.Fields.Select(field => new
+                    var labels = new List<string>();
+                    
+                    if (field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None)
+                    {
+                        var labelValue = field.SemanticLabel.ToString()!.ToLowerInvariant();
+                        labels.Add(labelValue);
+                        
+                        if (labelValue == "title") hasTitleLabel = true;
+                        if (labelValue == "url") hasUrlLabel = true;
+                    }
+                    
+                    properties.Add(new
                     {
                         name = field.FieldName,
                         type = GetApiPropertyTypeFromFieldType(field.DataType),
@@ -881,10 +1179,46 @@ namespace CopilotConnectorGui.Services
                         isQueryable = field.IsQueryable,
                         isRetrievable = field.IsRetrievable,
                         isRefinable = field.IsRefinable,
-                        labels = field.SemanticLabel != null && field.SemanticLabel != SemanticLabel.None 
-                            ? new[] { field.SemanticLabel.ToString()!.ToLowerInvariant() } 
-                            : Array.Empty<string>()
-                    }).ToArray()
+                        labels = labels.ToArray()
+                    });
+                }
+                
+                // Ensure we have required title property
+                if (!hasTitleLabel)
+                {
+                    _logger.LogWarning("No field with 'title' label found. Adding default 'title' property.");
+                    properties.Add(new
+                    {
+                        name = "title",
+                        type = "string",
+                        isSearchable = true,
+                        isQueryable = true,
+                        isRetrievable = true,
+                        isRefinable = false,
+                        labels = new[] { "title" }
+                    });
+                }
+                
+                // Ensure we have required url property
+                if (!hasUrlLabel)
+                {
+                    _logger.LogWarning("No field with 'url' label found. Adding default 'url' property.");
+                    properties.Add(new
+                    {
+                        name = "url",
+                        type = "string",
+                        isSearchable = false,
+                        isQueryable = false,
+                        isRetrievable = true,
+                        isRefinable = false,
+                        labels = new[] { "url" }
+                    });
+                }
+                
+                var schemaRequest = new
+                {
+                    baseType = "microsoft.graph.externalItem",
+                    properties = properties.ToArray()
                 };
 
                 var schemaJson = JsonConvert.SerializeObject(schemaRequest);
@@ -981,5 +1315,166 @@ namespace CopilotConnectorGui.Services
             
             return httpClient;
         }
+
+        /// <summary>
+        /// Creates schema, external connection, and deploys the ingestion service container - complete end-to-end automation
+        /// </summary>
+        public async Task<CompleteDeploymentResult> CreateCompleteExternalConnectionAsync(
+            string tenantId,
+            string clientId,
+            string clientSecret,
+            string jsonSample,
+            string connectionName,
+            string connectionDescription,
+            IProgress<string>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                progress?.Report("🚀 Starting complete external connection deployment...");
+                
+                // Step 1: Create schema and connection
+                progress?.Report("📊 Creating Microsoft Graph schema and external connection...");
+                var schemaResult = await CreateSchemaAndConnectionAsync(
+                    tenantId, clientId, clientSecret, 
+                    jsonSample, connectionName, connectionDescription);
+                
+                if (!schemaResult.Success)
+                {
+                    return new CompleteDeploymentResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Schema creation failed: {schemaResult.ErrorMessage}",
+                        SchemaResult = schemaResult
+                    };
+                }
+
+                // Step 2: Parse JSON and create schema mapping
+                progress?.Report("🔍 Parsing JSON structure and creating field mappings...");
+                var mappingConfig = _jsonParser.ParseJsonToSchema(jsonSample);
+                
+                // Apply semantic labels
+                progress?.Report("🏷️ Applying semantic labels to schema fields...");
+                _semanticMapper.AssignSemanticLabels(mappingConfig.Fields);
+
+                // Step 2.5: Wait for credential propagation
+                progress?.Report("⏳ Waiting for app registration permissions to propagate (45 seconds)...");
+                await Task.Delay(45000, cancellationToken); // Wait 45 seconds for credential propagation
+
+                // Step 3: Deploy ingestion service container
+                progress?.Report("🐳 Building and deploying ingestion service container...");
+                var deploymentResult = await _containerService.DeployIngestionServiceAsync(
+                    schemaResult.ConnectionId!,
+                    tenantId,
+                    clientId,
+                    clientSecret,
+                    mappingConfig);
+
+                if (!deploymentResult.Success)
+                {
+                    _logger.LogWarning("Schema created successfully but container deployment failed for connection {ConnectionId}: {Error}", 
+                        schemaResult.ConnectionId, deploymentResult.ErrorMessage);
+                    
+                    return new CompleteDeploymentResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Schema created but ingestion service deployment failed: {deploymentResult.ErrorMessage}",
+                        SchemaResult = schemaResult,
+                        DeploymentResult = deploymentResult
+                    };
+                }
+
+                progress?.Report("✅ Deployment completed successfully!");
+                
+                _logger.LogInformation("Complete deployment successful - Connection: {ConnectionId}, Service URL: {ServiceUrl}",
+                    schemaResult.ConnectionId, deploymentResult.ServiceUrl);
+
+                return new CompleteDeploymentResult
+                {
+                    Success = true,
+                    SchemaResult = schemaResult,
+                    DeploymentResult = deploymentResult,
+                    MappingConfiguration = mappingConfig
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Complete deployment failed");
+                return new CompleteDeploymentResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Enhanced version that works with user context (delegated permissions)
+        /// </summary>
+        public async Task<CompleteDeploymentResult> CreateCompleteExternalConnectionWithUserContextAsync(
+            ClaimsPrincipal user,
+            string jsonSample,
+            string connectionName,
+            string connectionDescription,
+            IProgress<string>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                progress?.Report("🚀 Starting complete external connection deployment with user context...");
+                
+                // Step 1: Create schema and connection with user context
+                progress?.Report("📊 Creating Microsoft Graph schema and external connection...");
+                var schemaResult = await CreateSchemaAndConnectionWithUserContextAsync(
+                    user, jsonSample, connectionName, connectionDescription, progress, cancellationToken);
+                
+                if (!schemaResult.Success)
+                {
+                    return new CompleteDeploymentResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Schema creation failed: {schemaResult.ErrorMessage}",
+                        SchemaResult = schemaResult
+                    };
+                }
+
+                // For user context, we need to extract the tenant info differently
+                // This is a limitation - we'd need the user to provide app registration details
+                // for container deployment, or we'd create a service-to-service app registration
+                
+                progress?.Report("⚠️ Note: Container deployment requires app registration details");
+                _logger.LogInformation("Schema created with user context for connection {ConnectionId}. Container deployment requires separate app registration.", 
+                    schemaResult.ConnectionId);
+
+                return new CompleteDeploymentResult
+                {
+                    Success = true,
+                    SchemaResult = schemaResult,
+                    RequiresManualContainerDeployment = true,
+                    InstructionsMessage = "Schema created successfully. To deploy the ingestion service, please provide app registration credentials or use the PowerShell deployment script."
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Complete deployment with user context failed");
+                return new CompleteDeploymentResult
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+    }
+
+    // Supporting model for complete deployment result
+    public class CompleteDeploymentResult
+    {
+        public bool Success { get; set; }
+        public string? ErrorMessage { get; set; }
+        public SchemaCreationResult? SchemaResult { get; set; }
+        public IngestionServiceDeploymentResult? DeploymentResult { get; set; }
+        public SchemaMappingConfiguration? MappingConfiguration { get; set; }
+        public bool RequiresManualContainerDeployment { get; set; }
+        public string? InstructionsMessage { get; set; }
     }
 }
