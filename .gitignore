@@ -385,16 +385,22 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+.idea/
 
-appsettings.json
-bin/*.*
-obj/*.*
-obj/Debug/net9.0/apphost.exe
-obj/Debug/net9.0/CopilotConnectorGui.assets.cache
+# User-specific files (consolidated)
 appsettings.json
 appsettings.Development.json
-Scripts/test-schema.json
+appsettings.*.json
+!appsettings.Production.json
+
+# Application logs
+app-logs.txt
+*.log
+
+# Test data files (uncomment to track these in git)
+# Scripts/test-*.json
 Scripts/test-batch.json
 Scripts/test-product1.json
 Scripts/test-product2.json
 Scripts/test-product3.json
+Scripts/test-schema.json

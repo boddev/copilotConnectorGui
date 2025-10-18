@@ -300,7 +300,8 @@ namespace CopilotConnectorGui.Services
             string clientSecret, 
             string jsonSample,
             string connectionName,
-            string connectionDescription)
+            string connectionDescription,
+            SchemaMappingConfiguration? schemaMappingConfig = null)
         {
             try
             {
@@ -313,6 +314,15 @@ namespace CopilotConnectorGui.Services
                 
                 // Parse JSON sample to create schema
                 var schema = CreateSchemaFromJson(jsonSample);
+                
+                // Merge custom fields from schema mapping configuration
+                if (schemaMappingConfig != null && schemaMappingConfig.Fields != null)
+                {
+                    _logger.LogInformation("Merging {CustomFieldCount} custom fields from schema mapping configuration", 
+                        schemaMappingConfig.Fields.Count(f => string.IsNullOrEmpty(f.JsonPath)));
+                    MergeCustomFields(schema, schemaMappingConfig);
+                }
+                
                 // Create connection ID that fits 3-32 character limit
                 var connectionId = $"copilot{Guid.NewGuid():N}"[..20]; // First 20 chars: "copilot" + 13 chars from GUID
                 
@@ -681,27 +691,29 @@ namespace CopilotConnectorGui.Services
                 // Skip reserved property names
                 if (reservedNames.Contains(originalPropertyName))
                 {
-                    // If it's the "properties" object, flatten its contents
+                    // If it's the "properties" object, flatten its contents without adding prefix
                     if (originalPropertyName.Equals("properties", StringComparison.OrdinalIgnoreCase) && 
                         propertyValue.Type == JTokenType.Object)
                     {
                         var nestedObject = propertyValue as JObject;
                         if (nestedObject != null)
                         {
-                            FlattenJsonProperties(nestedObject, "", properties);
+                            FlattenJsonProperties(nestedObject, prefix, properties);
                         }
                     }
                     continue;
                 }
                 
-                // Skip if it's a nested object - flatten it instead
+                // If it's a nested object - flatten it WITH the parent name as prefix
                 if (propertyValue.Type == JTokenType.Object)
                 {
                     var nestedObject = propertyValue as JObject;
                     if (nestedObject != null)
                     {
-                        // Recursively flatten nested properties
-                        FlattenJsonProperties(nestedObject, "", properties);
+                        // Build the prefix: if we already have a prefix, append with it; otherwise use the property name
+                        var newPrefix = string.IsNullOrEmpty(prefix) ? originalPropertyName : $"{prefix}{originalPropertyName}";
+                        // Recursively flatten nested properties with the parent name as prefix
+                        FlattenJsonProperties(nestedObject, newPrefix, properties);
                     }
                     continue;
                 }
@@ -716,7 +728,9 @@ namespace CopilotConnectorGui.Services
                     }
                 }
                 
-                var propertyName = NormalizePropertyName(originalPropertyName);
+                // Build the full property name with prefix if we have one
+                var fullPropertyName = string.IsNullOrEmpty(prefix) ? originalPropertyName : $"{prefix}{originalPropertyName}";
+                var propertyName = NormalizePropertyName(fullPropertyName);
                 
                 // Skip if we've already added this property
                 if (properties.ContainsKey(propertyName))
@@ -745,6 +759,87 @@ namespace CopilotConnectorGui.Services
 
                 properties[propertyName] = schemaProperty;
             }
+        }
+
+        private void MergeCustomFields(Dictionary<string, Microsoft.Graph.Models.ExternalConnectors.Property> schema, SchemaMappingConfiguration mappingConfig)
+        {
+            // Find custom fields (fields with empty JsonPath or explicitly marked)
+            var customFields = mappingConfig.Fields.Where(f => string.IsNullOrEmpty(f.JsonPath) || 
+                                                                f.JsonPath.StartsWith("custom", StringComparison.OrdinalIgnoreCase));
+            
+            foreach (var customField in customFields)
+            {
+                var propertyName = NormalizePropertyName(customField.FieldName);
+                
+                // Skip if already exists in schema (unless it's a custom override)
+                if (schema.ContainsKey(propertyName))
+                {
+                    _logger.LogInformation("Custom field {FieldName} already exists in schema, skipping", propertyName);
+                    continue;
+                }
+                
+                // Convert the FieldDataType to PropertyType
+                var propertyType = ConvertFieldDataTypeToPropertyType(customField.DataType);
+                
+                // Only String and StringCollection can be searchable
+                bool canBeSearchable = propertyType == Microsoft.Graph.Models.ExternalConnectors.PropertyType.String || 
+                                      propertyType == Microsoft.Graph.Models.ExternalConnectors.PropertyType.StringCollection;
+                
+                var property = new Microsoft.Graph.Models.ExternalConnectors.Property
+                {
+                    Name = propertyName,
+                    Type = propertyType,
+                    IsSearchable = customField.IsSearchable && canBeSearchable,
+                    IsQueryable = customField.IsQueryable,
+                    IsRetrievable = customField.IsRetrievable,
+                    IsRefinable = customField.IsRefinable
+                };
+                
+                // Add semantic label if specified
+                if (customField.SemanticLabel.HasValue && customField.SemanticLabel.Value != SemanticLabel.None)
+                {
+                    property.Labels = new List<Microsoft.Graph.Models.ExternalConnectors.Label?>
+                    {
+                        ConvertSemanticLabelToGraphLabel(customField.SemanticLabel.Value)
+                    };
+                }
+                
+                schema[propertyName] = property;
+                _logger.LogInformation("Added custom field: {FieldName} (Type: {Type})", propertyName, propertyType);
+            }
+        }
+
+        private Microsoft.Graph.Models.ExternalConnectors.PropertyType ConvertFieldDataTypeToPropertyType(FieldDataType dataType)
+        {
+            return dataType switch
+            {
+                FieldDataType.String => Microsoft.Graph.Models.ExternalConnectors.PropertyType.String,
+                FieldDataType.Int32 => Microsoft.Graph.Models.ExternalConnectors.PropertyType.Int64,
+                FieldDataType.Int64 => Microsoft.Graph.Models.ExternalConnectors.PropertyType.Int64,
+                FieldDataType.Double => Microsoft.Graph.Models.ExternalConnectors.PropertyType.Double,
+                FieldDataType.DateTime => Microsoft.Graph.Models.ExternalConnectors.PropertyType.DateTime,
+                FieldDataType.Boolean => Microsoft.Graph.Models.ExternalConnectors.PropertyType.Boolean,
+                FieldDataType.StringCollection => Microsoft.Graph.Models.ExternalConnectors.PropertyType.StringCollection,
+                _ => Microsoft.Graph.Models.ExternalConnectors.PropertyType.String
+            };
+        }
+
+        private Microsoft.Graph.Models.ExternalConnectors.Label ConvertSemanticLabelToGraphLabel(SemanticLabel label)
+        {
+            return label switch
+            {
+                SemanticLabel.Title => Microsoft.Graph.Models.ExternalConnectors.Label.Title,
+                SemanticLabel.Url => Microsoft.Graph.Models.ExternalConnectors.Label.Url,
+                SemanticLabel.CreatedBy => Microsoft.Graph.Models.ExternalConnectors.Label.CreatedBy,
+                SemanticLabel.LastModifiedBy => Microsoft.Graph.Models.ExternalConnectors.Label.LastModifiedBy,
+                SemanticLabel.Authors => Microsoft.Graph.Models.ExternalConnectors.Label.Authors,
+                SemanticLabel.CreatedDateTime => Microsoft.Graph.Models.ExternalConnectors.Label.CreatedDateTime,
+                SemanticLabel.LastModifiedDateTime => Microsoft.Graph.Models.ExternalConnectors.Label.LastModifiedDateTime,
+                SemanticLabel.FileName => Microsoft.Graph.Models.ExternalConnectors.Label.FileName,
+                SemanticLabel.FileExtension => Microsoft.Graph.Models.ExternalConnectors.Label.FileExtension,
+                SemanticLabel.IconUrl => Microsoft.Graph.Models.ExternalConnectors.Label.IconUrl,
+                _ => Microsoft.Graph.Models.ExternalConnectors.Label.Title
+            };
         }
 
         private string GetApiPropertyType(Microsoft.Graph.Models.ExternalConnectors.PropertyType? propertyType)

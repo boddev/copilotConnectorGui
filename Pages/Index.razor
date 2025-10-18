@@ -1374,7 +1374,8 @@
                 _appRegistrationResult.ClientSecret,
                 _configuration.JsonSample,
                 _configuration.ConnectionName,
-                _configuration.ConnectionDescription);
+                _configuration.ConnectionDescription,
+                _schemaMappingConfig);
 
             if (!_schemaResult.Success)
             {
@@ -1600,7 +1601,8 @@
                 _appRegistrationResult.ClientSecret,
                 _configuration.JsonSample,
                 _configuration.ConnectionName,
-                _configuration.ConnectionDescription);
+                _configuration.ConnectionDescription,
+                _schemaMappingConfig);
 
             if (!_schemaResult.Success)
             {
@@ -1676,7 +1678,8 @@
                         _appRegistrationResult.ClientSecret,
                         _configuration.JsonSample,
                         _configuration.ConnectionName,
-                        _configuration.ConnectionDescription);
+                        _configuration.ConnectionDescription,
+                        _schemaMappingConfig);
 
                     if (_schemaResult.Success)
                     {
