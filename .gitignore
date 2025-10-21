@@ -404,3 +404,14 @@ Scripts/test-product1.json
 Scripts/test-product2.json
 Scripts/test-product3.json
 Scripts/test-schema.json
+
+obj/*
+obj/project.assets.json
+obj/project.nuget.cache
+obj/Debug/net9.0/apphost.exe
+obj/Debug/net9.0/CopilotConnectorGui.assets.cache
+obj/Debug/net9.0/CopilotConnectorGui.csproj.FileListAbsolute.txt
+obj/Debug/net9.0/CopilotConnectorGui.csproj.FileListAbsolute.txt
+UI_STATE_PERSISTENCE_FIX.md
+DEPLOYMENT_AUTOMATION_GUIDE.md
+TestDeployment.txt
