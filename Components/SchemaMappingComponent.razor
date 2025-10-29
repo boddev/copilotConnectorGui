@@ -253,6 +253,8 @@
     [Parameter] public EventCallback<SchemaMappingConfiguration> OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public SemanticLabelMappingService? SemanticLabelService { get; set; }
+    [Parameter] public List<string>? AllowedGroupIds { get; set; }
+    [Parameter] public List<EntraIdGroupInfo>? AvailableGroups { get; set; }
 
     private SchemaFieldDefinition? _selectedField;
     private List<SchemaFieldDefinition> FlattenedFields = new();
@@ -358,10 +360,40 @@
         
         if (_showPreview)
         {
+            // Generate ACL information
+            var aclInfo = new List<object>();
+            
+            if (AllowedGroupIds != null && AllowedGroupIds.Any())
+            {
+                foreach (var groupId in AllowedGroupIds)
+                {
+                    var groupName = AvailableGroups?.FirstOrDefault(g => g.Id == groupId)?.DisplayName ?? groupId;
+                    aclInfo.Add(new
+                    {
+                        type = "group",
+                        value = groupId,
+                        accessType = "grant",
+                        displayName = groupName
+                    });
+                }
+            }
+            else
+            {
+                // No specific groups - everyone in tenant has access
+                aclInfo.Add(new
+                {
+                    type = "everyone",
+                    value = "everyone",
+                    accessType = "grant",
+                    displayName = "Everyone in tenant"
+                });
+            }
+
             // Generate schema preview
             var schemaObject = new
             {
                 baseType = "microsoft.graph.externalItem",
+                acl = aclInfo.ToArray(),
                 properties = FlattenedFields.Select(f => new
                 {
                     name = f.FieldName,

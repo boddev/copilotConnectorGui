@@ -49,6 +49,7 @@ namespace IngestionService.Models
         public string ConnectionId { get; set; } = string.Empty;
         public Dictionary<string, SchemaFieldInfo> Fields { get; set; } = new Dictionary<string, SchemaFieldInfo>();
         public List<string> RequiredFields { get; set; } = new List<string>();
+        public List<ExternalItemAcl>? DefaultAcls { get; set; }
     }
 
     public class SchemaFieldInfo

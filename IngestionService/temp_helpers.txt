@@ -1,0 +1,61 @@
+// Helper methods
+static void FlattenJsonToProperties(JsonElement element, string prefix, Dictionary<string, object> properties, System.Text.StringBuilder contentBuilder, HashSet<string> reservedNames)
+{
+    foreach (var property in element.EnumerateObject())
+    {
+        var propertyName = string.IsNullOrEmpty(prefix) ? property.Name : $"{prefix}{char.ToUpper(property.Name[0])}{property.Name.Substring(1)}";
+        if (reservedNames.Contains(property.Name.ToLowerInvariant())) continue;
+        propertyName = NormalizePropertyName(propertyName);
+        
+        switch (property.Value.ValueKind)
+        {
+            case JsonValueKind.Object:
+                FlattenJsonToProperties(property.Value, propertyName, properties, contentBuilder, reservedNames);
+                break;
+            case JsonValueKind.Array:
+                var arrayValues = new List<object>();
+                var isStringArray = true;
+                foreach (var item in property.Value.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var strValue = item.GetString();
+                        if (strValue != null) { arrayValues.Add(strValue); contentBuilder.Append(strValue).Append(" "); }
+                    }
+                    else if (item.ValueKind == JsonValueKind.Number) { isStringArray = false; arrayValues.Add(item.GetDouble()); }
+                    else if (item.ValueKind == JsonValueKind.True || item.ValueKind == JsonValueKind.False) { isStringArray = false; arrayValues.Add(item.GetBoolean()); }
+                    else { isStringArray = false; }
+                }
+                if (arrayValues.Count > 0) properties[propertyName] = isStringArray ? arrayValues.Cast<string>().ToArray() : arrayValues.ToArray();
+                break;
+            case JsonValueKind.String:
+                var stringValue = property.Value.GetString();
+                if (!string.IsNullOrEmpty(stringValue)) { properties[propertyName] = stringValue; contentBuilder.Append(stringValue).Append(" "); }
+                break;
+            case JsonValueKind.Number:
+                properties[propertyName] = property.Value.GetDouble();
+                contentBuilder.Append(property.Value.GetDouble()).Append(" ");
+                break;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                properties[propertyName] = property.Value.GetBoolean();
+                break;
+        }
+    }
+}
+
+static string NormalizePropertyName(string name)
+{
+    if (string.IsNullOrEmpty(name)) return name;
+    var normalized = new System.Text.StringBuilder();
+    foreach (var c in name)
+    {
+        if (char.IsLetterOrDigit(c)) normalized.Append(c);
+        else if (c == '_' || c == '-') normalized.Append('_');
+    }
+    var result = normalized.ToString();
+    if (result.Length > 0 && !char.IsLetter(result[0])) result = "field_" + result;
+    return result;
+}
+
+app.Run();

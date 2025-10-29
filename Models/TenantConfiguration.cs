@@ -22,6 +22,17 @@ namespace CopilotConnectorGui.Models
         [Required(ErrorMessage = "JSON sample is required")]
         [MinLength(10, ErrorMessage = "JSON sample must be at least 10 characters")]
         public string JsonSample { get; set; } = string.Empty;
+
+        // ACL Configuration - List of Entra ID Group IDs that have access to the data
+        public List<string> AllowedGroupIds { get; set; } = new List<string>();
+    }
+
+    public class EntraIdGroupInfo
+    {
+        public string Id { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? Mail { get; set; }
     }
 
     public class AppRegistrationResult

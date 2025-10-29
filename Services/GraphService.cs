@@ -130,5 +130,75 @@ namespace CopilotConnectorGui.Services
                 return false;
             }
         }
+
+        public async Task<List<Microsoft.Graph.Models.Group>> GetEntraIdGroupsAsync(ClaimsPrincipal user)
+        {
+            try
+            {
+                var accessToken = await GetAccessTokenForUserAsync(user);
+                var credential = new Azure.Core.TokenCredential[] { new CustomTokenCredential(accessToken) }[0];
+                var graphServiceClient = new GraphServiceClient(credential);
+
+                var groups = new List<Microsoft.Graph.Models.Group>();
+                
+                // Get groups with required headers for $orderby
+                var groupsPage = await graphServiceClient.Groups
+                    .GetAsync(requestConfiguration =>
+                    {
+                        requestConfiguration.QueryParameters.Select = new[] { "id", "displayName", "description", "mail" };
+                        requestConfiguration.QueryParameters.Top = 999;
+                        requestConfiguration.QueryParameters.Count = true;
+                        requestConfiguration.QueryParameters.Orderby = new[] { "displayName" };
+                        requestConfiguration.Headers.Add("ConsistencyLevel", "eventual");
+                    });
+
+                if (groupsPage?.Value != null)
+                {
+                    groups.AddRange(groupsPage.Value);
+
+                    // Handle pagination
+                    while (groupsPage?.OdataNextLink != null)
+                    {
+                        groupsPage = await graphServiceClient.Groups
+                            .WithUrl(groupsPage.OdataNextLink)
+                            .GetAsync();
+                        
+                        if (groupsPage?.Value != null)
+                        {
+                            groups.AddRange(groupsPage.Value);
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Successfully retrieved {GroupCount} Entra ID groups", groups.Count);
+                return groups;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting Entra ID groups");
+                throw;
+            }
+        }
+
+        // Custom token credential for user-based authentication
+        private class CustomTokenCredential : Azure.Core.TokenCredential
+        {
+            private readonly string _accessToken;
+
+            public CustomTokenCredential(string accessToken)
+            {
+                _accessToken = accessToken;
+            }
+
+            public override Azure.Core.AccessToken GetToken(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken)
+            {
+                return new Azure.Core.AccessToken(_accessToken, DateTimeOffset.UtcNow.AddHours(1));
+            }
+
+            public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken)
+            {
+                return new ValueTask<Azure.Core.AccessToken>(new Azure.Core.AccessToken(_accessToken, DateTimeOffset.UtcNow.AddHours(1)));
+            }
+        }
     }
 }

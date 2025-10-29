@@ -55,6 +55,7 @@ namespace CopilotConnectorGui.Models
         public string ConnectionDescription { get; set; } = string.Empty;
         public string OriginalJson { get; set; } = string.Empty;
         public List<SchemaFieldDefinition> Fields { get; set; } = new();
+        public List<string> AllowedGroupIds { get; set; } = new();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 

@@ -559,6 +559,68 @@
                                         </div>
                                     </div>
 
+                                    <div class="mb-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-shield-lock"></i> Access Control (ACL)
+                                        </label>
+                                        <div class="form-text mb-2">
+                                            Select which Entra ID groups should have access to the data in this connector. If no groups are selected, all users in your tenant will have access.
+                                        </div>
+                                        
+                                        @if (_isLoadingGroups)
+                                        {
+                                            <div class="text-center py-3">
+                                                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                                                    <span class="visually-hidden">Loading groups...</span>
+                                                </div>
+                                                <span class="ms-2">Loading Entra ID groups...</span>
+                                            </div>
+                                        }
+                                        else if (_availableGroups == null || !_availableGroups.Any())
+                                        {
+                                            <div class="alert alert-warning" role="alert">
+                                                <i class="bi bi-exclamation-triangle"></i> No groups found or unable to load groups.
+                                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" @onclick="LoadEntraIdGroups">
+                                                    <i class="bi bi-arrow-clockwise"></i> Retry
+                                                </button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                                                @foreach (var group in _availableGroups)
+                                                {
+                                                    <div class="form-check mb-2">
+                                                        <input class="form-check-input" type="checkbox" 
+                                                               id="group_@group.Id" 
+                                                               checked="@_configuration.AllowedGroupIds.Contains(group.Id)"
+                                                               @onchange="@(e => ToggleGroupSelection(group.Id, (bool)e.Value!))" />
+                                                        <label class="form-check-label" for="group_@group.Id">
+                                                            <strong>@group.DisplayName</strong>
+                                                            @if (!string.IsNullOrEmpty(group.Description))
+                                                            {
+                                                                <br />
+                                                                <small class="text-muted">@group.Description</small>
+                                                            }
+                                                            @if (!string.IsNullOrEmpty(group.Mail))
+                                                            {
+                                                                <br />
+                                                                <small class="text-muted"><i class="bi bi-envelope"></i> @group.Mail</small>
+                                                            }
+                                                        </label>
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="form-text mt-2">
+                                                <i class="bi bi-info-circle"></i> Selected @_configuration.AllowedGroupIds.Count group(s). 
+                                                @if (_configuration.AllowedGroupIds.Count == 0)
+                                                {
+                                                    <span class="text-warning"><strong>All tenant users</strong> will have access.</span>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+
                                     <div class="alert alert-info" style="display: none;">
                                         <h6><i class="bi bi-info-circle"></i> Choose Your Setup Method:</h6>
                                         <div class="row">
@@ -865,7 +927,9 @@
             }
 
             @* Schema Mapping Section *@
-            @if (_currentStep == SetupStep.SchemaMapping && _schemaMappingConfig != null)
+            @if ((_currentStep == SetupStep.SchemaMapping || 
+                  (_isProcessing && _forceShowUI && _schemaMappingConfig != null)) && 
+                 _schemaMappingConfig != null)
             {
                 <div class="card mb-4">
                     <div class="card-header">
@@ -876,7 +940,27 @@
                             Configuration="_schemaMappingConfig" 
                             OnSave="HandleSchemaMappingSubmit"
                             OnCancel="BackToConfiguration"
-                            SemanticLabelService="SemanticLabelMappingService" />
+                            SemanticLabelService="SemanticLabelMappingService"
+                            AllowedGroupIds="_configuration.AllowedGroupIds"
+                            AvailableGroups="_availableGroups" />
+                    </div>
+                </div>
+            }
+
+            @* Progress indicator during schema mapping submission *@
+            @if (_isProcessing && _forceShowUI && !string.IsNullOrEmpty(_statusMessage))
+            {
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border text-primary me-3" role="status">
+                                <span class="visually-hidden">Processing...</span>
+                            </div>
+                            <div>
+                                <h6 class="mb-1">Creating Connection...</h6>
+                                <p class="mb-0 text-muted">@_statusMessage</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             }
@@ -1003,6 +1087,10 @@
     private bool _isDeployingContainer = false;
     private CompleteDeploymentResult? _containerDeploymentResult;
 
+    // ACL / Group picker variables
+    private List<EntraIdGroupInfo> _availableGroups = new();
+    private bool _isLoadingGroups = false;
+
     [CascadingParameter]
     public Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
@@ -1023,6 +1111,9 @@
                     _configuration.TenantId = tenantIdClaim.Value;
                     StateHasChanged();
                 }
+
+                // Load available Entra ID groups for ACL configuration
+                await LoadEntraIdGroups();
             }
         }
     }
@@ -1499,19 +1590,20 @@
 
     private void LoadSampleJson()
     {
-        _configuration.JsonSample = @"{
-  ""title"": ""Sample Product"",
-  ""description"": ""This is a sample product for demonstration"",
-  ""price"": 29.99,
-  ""category"": ""Electronics"",
-  ""sku"": ""PROD-001"",
-  ""inStock"": true,
-  ""tags"": [""sample"", ""demo"", ""product""],
-  ""manufacturer"": {
-    ""name"": ""Sample Corp"",
-    ""country"": ""USA""
-  },
-  ""lastUpdated"": ""2024-01-15T10:30:00Z""
+                _configuration.JsonSample = @"{
+    ""id"": ""sample-product-001"",
+    ""title"": ""Sample Product"",
+    ""description"": ""This is a sample product for demonstration"",
+    ""price"": 29.99,
+    ""category"": ""Electronics"",
+    ""sku"": ""PROD-001"",
+    ""inStock"": true,
+    ""tags"": [""sample"", ""demo"", ""product""],
+    ""manufacturer"": {
+        ""name"": ""Sample Corp"",
+        ""country"": ""USA""
+    },
+    ""lastUpdated"": ""2024-01-15T10:30:00Z""
 }";
         StateHasChanged();
     }
@@ -1653,25 +1745,24 @@
         {
             _isProcessing = true;
             _currentRetryCount = 0;
-            _currentStep = SetupStep.CreatingConnection; // Set to CreatingConnection step
+            _currentStep = SetupStep.CreatingConnection; // set to creating step
             StartProcessTimer();
             LogActivity("Starting connection creation process", ActivityLogType.Info);
             StateHasChanged();
 
-            // Step 3: Create Schema and Connection with retry logic
             const int maxRetries = 5;
             _maxRetries = maxRetries;
             Exception? lastException = null;
-            
+
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
+                _currentRetryCount = attempt;
+                _statusMessage = $"Creating connection... (Attempt {attempt} of {maxRetries})";
+                LogActivity($"Attempt {attempt} of {maxRetries}: Creating external connection", ActivityLogType.Info);
+                StateHasChanged();
+
                 try
                 {
-                    _currentRetryCount = attempt;
-                    _statusMessage = $"Creating connection... (Attempt {attempt} of {maxRetries})";
-                    LogActivity($"Attempt {attempt} of {maxRetries}: Creating external connection", ActivityLogType.Info);
-                    StateHasChanged();
-
                     _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
                         _configuration.TenantId,
                         _appRegistrationResult.ApplicationId,
@@ -1690,48 +1781,35 @@
                         StopProcessTimer();
                         return;
                     }
-                    else if (attempt < maxRetries)
-                    {
-                        // Log the error but continue retrying
-                        lastException = new Exception(_schemaResult.ErrorMessage ?? "Unknown error");
-                        LogActivity($"Attempt {attempt} failed: {_schemaResult.ErrorMessage}", ActivityLogType.Warning);
-                        
-                        // Exponential backoff: 2^attempt seconds (2, 4, 8, 16 seconds)
-                        var delaySeconds = Math.Pow(2, attempt);
-                        _statusMessage = $"Attempt {attempt} failed. Retrying in {delaySeconds} seconds...";
-                        LogActivity($"Waiting {delaySeconds} seconds before retry", ActivityLogType.Info);
-                        StateHasChanged();
-                        
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                    }
                     else
                     {
-                        // Final attempt failed
-                        _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection after admin consent.";
-                        LogActivity($"Final attempt failed: {_schemaResult.ErrorMessage}", ActivityLogType.Error);
-                        break;
+                        lastException = new Exception(_schemaResult.ErrorMessage ?? "Unknown error");
+                        LogActivity($"Attempt {attempt} failed: {_schemaResult.ErrorMessage}", ActivityLogType.Warning);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception attemptEx)
                 {
-                    lastException = ex;
-                    LogActivity($"Attempt {attempt} failed with exception: {ex.Message}", ActivityLogType.Warning);
-                    
-                    if (attempt < maxRetries)
-                    {
-                        // Exponential backoff: 2^attempt seconds (2, 4, 8, 16 seconds)
-                        var delaySeconds = Math.Pow(2, attempt);
-                        _statusMessage = $"Attempt {attempt} failed with error. Retrying in {delaySeconds} seconds...";
-                        LogActivity($"Waiting {delaySeconds} seconds before retry", ActivityLogType.Info);
-                        StateHasChanged();
-                        
-                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                    }
+                    lastException = attemptEx;
+                    LogActivity($"Attempt {attempt} threw exception: {attemptEx.Message}", ActivityLogType.Warning);
+                }
+
+                if (attempt < maxRetries)
+                {
+                    var delaySeconds = Math.Pow(2, attempt); // 2,4,8,16 seconds
+                    _statusMessage = $"Attempt {attempt} failed. Retrying in {delaySeconds} seconds...";
+                    LogActivity($"Waiting {delaySeconds} seconds before retry", ActivityLogType.Info);
+                    StateHasChanged();
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                }
+                else
+                {
+                    _errorMessage = _schemaResult?.ErrorMessage ?? lastException?.Message ?? "Failed to create schema and connection after admin consent.";
+                    LogActivity($"Final attempt failed: {_errorMessage}", ActivityLogType.Error);
+                    break;
                 }
             }
 
-            // If we get here, all retries failed
-            if (lastException != null)
+            if (_currentStep != SetupStep.Completed && lastException != null)
             {
                 _errorMessage = $"Failed after {maxRetries} attempts. Last error: {lastException.Message}";
                 LogActivity($"All {maxRetries} attempts failed. Process stopped.", ActivityLogType.Error);
@@ -1876,6 +1954,9 @@
                 _configuration.ConnectionName,
                 _configuration.ConnectionDescription);
 
+            // Copy AllowedGroupIds from tenant configuration
+            _schemaMappingConfig.AllowedGroupIds = _configuration.AllowedGroupIds ?? new List<string>();
+
             // Auto-assign semantic labels
             SemanticLabelMappingService.AssignSemanticLabels(_schemaMappingConfig.Fields);
 
@@ -1975,20 +2056,27 @@
             if (!_schemaResult.Success)
             {
                 _errorMessage = _schemaResult.ErrorMessage ?? "Failed to create schema and connection.";
+                _isProcessing = false;
+                // Keep _forceShowUI = true so error is visible
+                StateHasChanged();
                 return;
             }
 
             _currentStep = SetupStep.Completed;
             _successMessage = $"✅ External connection '{mappingConfig.ConnectionName}' created successfully with custom schema mapping!";
+            _forceShowUI = false; // Success - can hide UI now
         }
         catch (Exception ex)
         {
             _errorMessage = $"An error occurred: {ex.Message}";
+            _isProcessing = false;
+            // Keep _forceShowUI = true so error is visible
+            StateHasChanged();
         }
         finally
         {
             _isProcessing = false;
-            _forceShowUI = false;
+            // Don't set _forceShowUI = false here - let success/error handling decide
             StateHasChanged();
         }
     }
@@ -2094,6 +2182,7 @@
                 ConnectionDescription = _configuration.ConnectionDescription,
                 JsonSample = _configuration.JsonSample,
                 ConfigTenantId = _configuration.TenantId,
+                AllowedGroupIds = _configuration.AllowedGroupIds,
                 CurrentStep = _currentStep.ToString(),
                 Timestamp = DateTime.UtcNow.Ticks
             };
@@ -2148,6 +2237,20 @@
                 _configuration.TenantId = configTenantId.GetString() ?? "";
             }
             
+            // Restore ACL group selections
+            if (state.TryGetProperty("AllowedGroupIds", out var groupIds))
+            {
+                _configuration.AllowedGroupIds = new List<string>();
+                foreach (var groupId in groupIds.EnumerateArray())
+                {
+                    var id = groupId.GetString();
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        _configuration.AllowedGroupIds.Add(id);
+                    }
+                }
+            }
+            
             // Restore step - set to AdminConsentRequired so user sees the "Continue Setup" button
             if (state.TryGetProperty("CurrentStep", out var stepJson) && 
                 Enum.TryParse<SetupStep>(stepJson.GetString(), out var step))
@@ -2165,6 +2268,62 @@
             Console.WriteLine($"Failed to restore state: {ex.Message}");
             return false;
         }
+    }
+
+    private async Task LoadEntraIdGroups()
+    {
+        _isLoadingGroups = true;
+        _errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            if (AuthenticationStateTask == null) return;
+            
+            var authState = await AuthenticationStateTask;
+            if (!authState.User.Identity?.IsAuthenticated ?? true)
+            {
+                _errorMessage = "You must be signed in to load Entra ID groups.";
+                return;
+            }
+
+            var groups = await GraphService.GetEntraIdGroupsAsync(authState.User);
+            _availableGroups = groups.Select(g => new EntraIdGroupInfo
+            {
+                Id = g.Id ?? string.Empty,
+                DisplayName = g.DisplayName ?? string.Empty,
+                Description = g.Description,
+                Mail = g.Mail
+            }).ToList();
+
+            LogActivity($"Loaded {_availableGroups.Count} Entra ID groups for ACL configuration", ActivityLogType.Success);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load Entra ID groups: {ex.Message}";
+            LogActivity($"Error loading groups: {ex.Message}", ActivityLogType.Error);
+        }
+        finally
+        {
+            _isLoadingGroups = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleGroupSelection(string groupId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!_configuration.AllowedGroupIds.Contains(groupId))
+            {
+                _configuration.AllowedGroupIds.Add(groupId);
+            }
+        }
+        else
+        {
+            _configuration.AllowedGroupIds.Remove(groupId);
+        }
+        StateHasChanged();
     }
 
     public void Dispose()

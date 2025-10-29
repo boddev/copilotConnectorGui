@@ -97,6 +97,265 @@ var externalItems = app.MapGroup("/api/external-items")
     .WithTags("External Items")
     .WithOpenApi();
 
+// Create external item from raw JSON (auto-transform)
+externalItems.MapPost("/raw", async (
+    [FromBody] JsonDocument jsonDoc,
+    GraphIngestionService ingestionService,
+    SchemaValidationService validationService,
+    ILogger<Program> logger) =>
+{
+    try
+    {
+        var root = jsonDoc.RootElement;
+        
+        // Extract ID from the JSON (required field)
+        if (!root.TryGetProperty("id", out var idElement))
+        {
+            return Results.BadRequest(new ExternalItemResponse
+            {
+                Success = false,
+                ErrorMessage = "'id' field is required in the JSON payload"
+            });
+        }
+        
+        var itemId = idElement.GetString();
+        logger.LogInformation("Creating external item from raw JSON with ID: {ItemId}", itemId);
+        
+        // Transform raw JSON to ExternalItemRequest
+        var request = new ExternalItemRequest
+        {
+            Id = itemId!,
+            Properties = new Dictionary<string, object>(),
+            Content = string.Empty
+        };
+        
+        // Flatten and add all properties (except id)
+        var contentBuilder = new System.Text.StringBuilder();
+        FlattenJsonToProperties(root, string.Empty, request.Properties, contentBuilder, new HashSet<string> { "id", "content", "acl", "acls", "properties" });
+        
+        // Log the properties that were created
+        logger.LogInformation("Flattened JSON to {PropertyCount} properties: {PropertyNames}", 
+            request.Properties.Count, 
+            string.Join(", ", request.Properties.Keys));
+        
+        // Set content (combine searchable fields)
+        request.Content = contentBuilder.ToString().Trim();
+        logger.LogInformation("Generated content with length: {ContentLength}", request.Content.Length);
+        
+        // Ensure required fields exist - add defaults if missing
+        if (!request.Properties.ContainsKey("url"))
+        {
+            // Generate a default URL if not provided
+            request.Properties["url"] = $"https://example.com/items/{itemId}";
+            logger.LogWarning("Missing 'url' field, added default: {Url}", request.Properties["url"]);
+        }
+        
+        // Ensure content is not empty (Graph may reject empty content)
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            request.Content = request.Properties.ContainsKey("title") 
+                ? request.Properties["title"]?.ToString() ?? itemId 
+                : itemId;
+            logger.LogWarning("Empty content, using fallback: {Content}", request.Content);
+        }
+
+        // Align property set with registered schema (remove unknowns, coerce types)
+        try
+        {
+            var schemaConfig = validationService.GetSchemaConfiguration();
+            if (schemaConfig != null)
+            {
+                // Field remapping heuristics (map common alternate names to schema fields if missing)
+                // publishedDate -> lastUpdated, score -> price, isActive -> inStock
+                if (request.Properties.ContainsKey("publishedDate") && !request.Properties.ContainsKey("lastUpdated") && schemaConfig.Fields.ContainsKey("lastUpdated"))
+                {
+                    request.Properties["lastUpdated"] = request.Properties["publishedDate"];
+                    request.Properties.Remove("publishedDate");
+                }
+                if (request.Properties.ContainsKey("score") && !request.Properties.ContainsKey("price") && schemaConfig.Fields.ContainsKey("price"))
+                {
+                    request.Properties["price"] = request.Properties["score"];
+                    request.Properties.Remove("score");
+                }
+                if (request.Properties.ContainsKey("isActive") && !request.Properties.ContainsKey("inStock") && schemaConfig.Fields.ContainsKey("inStock"))
+                {
+                    request.Properties["inStock"] = request.Properties["isActive"];
+                    request.Properties.Remove("isActive");
+                }
+
+                var originalKeys = request.Properties.Keys.ToList();
+                foreach (var key in originalKeys)
+                {
+                    // Allow OData type annotation passthrough
+                    if (key.EndsWith("@odata.type", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!schemaConfig.Fields.ContainsKey(key))
+                    {
+                        logger.LogWarning("Property '{Prop}' not found in schema. Removing before send.", key);
+                        request.Properties.Remove(key);
+                        continue;
+                    }
+
+                    var fieldType = schemaConfig.Fields[key].Type; // String, Int64, Double, Boolean, DateTime, StringCollection
+                    var value = request.Properties[key];
+
+                    switch (fieldType)
+                    {
+                        case "StringCollection":
+                            // If we have a single string, wrap it; if we have a mixed object array, convert to strings
+                            if (value is string single)
+                            {
+                                request.Properties[key] = new List<string> { single };
+                            }
+                            else if (value is IEnumerable<string> strEnum)
+                            {
+                                // ensure concrete list for serializer
+                                request.Properties[key] = strEnum.ToList();
+                            }
+                            else if (value is IEnumerable<object> objEnum)
+                            {
+                                request.Properties[key] = objEnum.Select(o => o?.ToString() ?? string.Empty).ToList();
+                            }
+                            // Add OData type annotation for collection of strings
+                            var annotationKey = key + "@odata.type";
+                            if (!request.Properties.ContainsKey(annotationKey))
+                            {
+                                request.Properties[annotationKey] = "Collection(String)";
+                            }
+                            break;
+                        case "String":
+                            // If we have an array, flatten to space-delimited string to avoid Graph deserialization error
+                            if (value is IEnumerable<string> arrStrings)
+                            {
+                                var flattened = string.Join(" ", arrStrings.Where(s => !string.IsNullOrWhiteSpace(s)));
+                                request.Properties[key] = flattened;
+                                logger.LogWarning("Coerced array value for '{Prop}' to string: {Value}", key, flattened);
+                            }
+                            break;
+                        case "DateTime":
+                            if (value is string dtStr && DateTimeOffset.TryParse(dtStr, out var dto))
+                            {
+                                request.Properties[key] = dto; // Kiota should serialize DateTimeOffset correctly
+                            }
+                            break;
+                        case "Double":
+                            if (value is string dblStr && double.TryParse(dblStr, out var dbl))
+                            {
+                                request.Properties[key] = dbl;
+                            }
+                            break;
+                        case "Int64":
+                            if (value is string lngStr && long.TryParse(lngStr, out var lng))
+                            {
+                                request.Properties[key] = lng;
+                            }
+                            break;
+                        case "Boolean":
+                            if (value is string boolStr && bool.TryParse(boolStr, out var b))
+                            {
+                                request.Properties[key] = b;
+                            }
+                            break;
+                    }
+                }
+
+                // Optional: add iconUrl if schema expects it and it's missing
+                if (schemaConfig.Fields.ContainsKey("iconUrl") && !request.Properties.ContainsKey("iconUrl"))
+                {
+                    request.Properties["iconUrl"] = "https://example.com/default-icon.png";
+                    logger.LogInformation("Added default iconUrl property.");
+                }
+            }
+        }
+        catch (Exception alignEx)
+        {
+            logger.LogWarning(alignEx, "Schema alignment phase encountered an error but will proceed.");
+        }
+        
+        // Check for explicit ACLs in the JSON
+        if (root.TryGetProperty("acls", out var aclsElement) && aclsElement.ValueKind == JsonValueKind.Array)
+        {
+            request.Acls = new List<ExternalItemAcl>();
+            foreach (var aclItem in aclsElement.EnumerateArray())
+            {
+                request.Acls.Add(new ExternalItemAcl
+                {
+                    Type = aclItem.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? "everyone" : "everyone",
+                    Value = aclItem.TryGetProperty("value", out var valueEl) ? valueEl.GetString() ?? "everyone" : "everyone",
+                    AccessType = aclItem.TryGetProperty("accessType", out var accessEl) ? accessEl.GetString() ?? "grant" : "grant"
+                });
+            }
+        }
+        else
+        {
+            // Use default ACLs from schema configuration if available
+            var schemaConfig = validationService.GetSchemaConfiguration();
+            if (schemaConfig?.DefaultAcls != null && schemaConfig.DefaultAcls.Count > 0)
+            {
+                request.Acls = schemaConfig.DefaultAcls;
+                logger.LogInformation("Applied default ACLs from schema configuration: {AclCount} ACLs", schemaConfig.DefaultAcls.Count);
+            }
+            else
+            {
+                // Fallback to "everyone" in tenant
+                request.Acls = new List<ExternalItemAcl>
+                {
+                    new ExternalItemAcl
+                    {
+                        Type = "everyone",
+                        Value = "everyone",
+                        AccessType = "grant"
+                    }
+                };
+                logger.LogInformation("No default ACLs configured, using 'everyone' in tenant");
+            }
+        }
+        
+        // Validate the transformed request
+        var validationResult = validationService.ValidateExternalItem(request);
+        if (!validationResult.IsValid)
+        {
+            return Results.BadRequest(new ExternalItemResponse
+            {
+                Success = false,
+                ErrorMessage = "Validation failed after transformation",
+                ValidationErrors = validationResult.Errors
+            });
+        }
+        
+        // Create the item
+        var result = await ingestionService.CreateExternalItemAsync(request);
+        
+        if (result.Success)
+        {
+            logger.LogInformation("Successfully created external item from raw JSON: {ItemId}", itemId);
+            return Results.Ok(result);
+        }
+        else
+        {
+            logger.LogError("Failed to create external item {ItemId}: {Error}", itemId, result.ErrorMessage);
+            return Results.Problem(
+                statusCode: 500,
+                detail: result.ErrorMessage,
+                title: "Failed to create external item");
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Exception occurred while creating external item from raw JSON");
+        return Results.Problem(
+            statusCode: 500,
+            detail: ex.Message,
+            title: "Internal server error");
+    }
+})
+.WithName("CreateExternalItemFromRawJson")
+.WithSummary("Create external item from raw JSON")
+.WithDescription("Accepts raw JSON payload and automatically transforms it to the external item format (same as schema creation)")
+.Produces<ExternalItemResponse>(200)
+.Produces<ExternalItemResponse>(400)
+.Produces<ExternalItemResponse>(500);
+
 // Create external item
 externalItems.MapPost("/", async (
     ExternalItemRequest request,
@@ -450,5 +709,66 @@ app.MapGet("/info", (IConfiguration config) =>
 .WithDescription("Returns service information and available endpoints")
 .WithTags("Info")
 .WithOpenApi();
+
+// Helper methods for JSON flattening
+static void FlattenJsonToProperties(JsonElement element, string prefix, Dictionary<string, object> properties, System.Text.StringBuilder contentBuilder, HashSet<string> reservedNames)
+{
+    foreach (var property in element.EnumerateObject())
+    {
+        // Use the same concatenation logic as schema creation - no camelCase transformation
+        var propertyName = string.IsNullOrEmpty(prefix) ? property.Name : $"{prefix}{property.Name}";
+        if (reservedNames.Contains(property.Name.ToLowerInvariant())) continue;
+        propertyName = NormalizePropertyName(propertyName);
+        
+        switch (property.Value.ValueKind)
+        {
+            case JsonValueKind.Object:
+                FlattenJsonToProperties(property.Value, propertyName, properties, contentBuilder, reservedNames);
+                break;
+            case JsonValueKind.Array:
+                var arrayValues = new List<object>();
+                var isStringArray = true;
+                foreach (var item in property.Value.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var strValue = item.GetString();
+                        if (strValue != null) { arrayValues.Add(strValue); contentBuilder.Append(strValue).Append(" "); }
+                    }
+                    else if (item.ValueKind == JsonValueKind.Number) { isStringArray = false; arrayValues.Add(item.GetDouble()); }
+                    else if (item.ValueKind == JsonValueKind.True || item.ValueKind == JsonValueKind.False) { isStringArray = false; arrayValues.Add(item.GetBoolean()); }
+                    else { isStringArray = false; }
+                }
+                if (arrayValues.Count > 0) properties[propertyName] = isStringArray ? arrayValues.Cast<string>().ToArray() : arrayValues.ToArray();
+                break;
+            case JsonValueKind.String:
+                var stringValue = property.Value.GetString();
+                if (!string.IsNullOrEmpty(stringValue)) { properties[propertyName] = stringValue; contentBuilder.Append(stringValue).Append(" "); }
+                break;
+            case JsonValueKind.Number:
+                properties[propertyName] = property.Value.GetDouble();
+                contentBuilder.Append(property.Value.GetDouble()).Append(" ");
+                break;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                properties[propertyName] = property.Value.GetBoolean();
+                break;
+        }
+    }
+}
+
+static string NormalizePropertyName(string name)
+{
+    if (string.IsNullOrEmpty(name)) return name;
+    var normalized = new System.Text.StringBuilder();
+    foreach (var c in name)
+    {
+        if (char.IsLetterOrDigit(c)) normalized.Append(c);
+        else if (c == '_' || c == '-') normalized.Append('_');
+    }
+    var result = normalized.ToString();
+    if (result.Length > 0 && !char.IsLetter(result[0])) result = "field_" + result;
+    return result;
+}
 
 app.Run();

@@ -29,7 +29,8 @@ namespace CopilotConnectorGui.Services
             string clientId, 
             string clientSecret,
             SchemaMappingConfiguration schemaConfig,
-            int? preferredPort = null)
+            int? preferredPort = null,
+            bool forceRebuild = false)
         {
             try
             {
@@ -39,7 +40,7 @@ namespace CopilotConnectorGui.Services
                 var servicePort = preferredPort ?? await FindAvailablePortAsync();
 
                 // Call the PowerShell script to deploy the service
-                var result = await ExecuteDeploymentScriptAsync(connectionId, tenantId, clientId, clientSecret, schemaConfig, servicePort);
+                var result = await ExecuteDeploymentScriptAsync(connectionId, tenantId, clientId, clientSecret, schemaConfig, servicePort, forceRebuild);
                 
                 if (result.Success)
                 {
@@ -67,7 +68,8 @@ namespace CopilotConnectorGui.Services
             string clientId, 
             string clientSecret,
             SchemaMappingConfiguration schemaConfig,
-            int servicePort)
+            int servicePort,
+            bool forceRebuild = false)
         {
             try
             {
@@ -86,8 +88,23 @@ namespace CopilotConnectorGui.Services
                 // No need to pass it as a parameter
                 _logger.LogInformation("Deploying ingestion service - schema will be fetched from Graph on startup");
 
+                // Serialize ACL configuration if available
+                string? aclConfigJson = null;
+                if (schemaConfig?.AllowedGroupIds != null && schemaConfig.AllowedGroupIds.Count > 0)
+                {
+                    var aclList = schemaConfig.AllowedGroupIds.Select(groupId => new
+                    {
+                        Type = "group",
+                        Value = groupId,
+                        AccessType = "grant"
+                    }).ToList();
+                    
+                    aclConfigJson = System.Text.Json.JsonSerializer.Serialize(aclList);
+                    _logger.LogInformation("Passing {AclCount} ACL group(s) to ingestion service", schemaConfig.AllowedGroupIds.Count);
+                }
+
                 // Build PowerShell command
-                var arguments = new[]
+                var argumentsList = new List<string>
                 {
                     "-ExecutionPolicy", "Bypass",
                     "-File", $"\"{scriptPath}\"",
@@ -98,6 +115,23 @@ namespace CopilotConnectorGui.Services
                     "-Port", servicePort.ToString(),
                     "-StopExisting"
                 };
+
+                // Add ACL configuration if available
+                if (!string.IsNullOrWhiteSpace(aclConfigJson))
+                {
+                    // Escape the JSON for PowerShell
+                    var escapedAclConfig = aclConfigJson.Replace("\"", "`\"");
+                    argumentsList.Add("-AclConfig");
+                    argumentsList.Add($"\"{escapedAclConfig}\"");
+                }
+
+                // Add rebuild flag if requested
+                if (forceRebuild)
+                {
+                    argumentsList.Add("-RebuildImage");
+                }
+
+                var arguments = argumentsList.ToArray();
 
                 using var process = new System.Diagnostics.Process();
                 process.StartInfo.FileName = "powershell.exe";
@@ -311,6 +345,93 @@ namespace CopilotConnectorGui.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to stop ingestion service for connection: {ConnectionId}", connectionId);
+                return false;
+            }
+        }
+
+        public async Task<bool> RedeployIngestionServiceAsync(string connectionId)
+        {
+            try
+            {
+                _logger.LogInformation("Redeploying ingestion service for connection: {ConnectionId}", connectionId);
+
+                // Get existing container information
+                var containers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters
+                {
+                    All = true,
+                    Filters = new Dictionary<string, IDictionary<string, bool>>
+                    {
+                        ["label"] = new Dictionary<string, bool> { [$"copilot.connection.id={connectionId}"] = true }
+                    }
+                });
+
+                var existingContainer = containers.FirstOrDefault();
+                if (existingContainer == null)
+                {
+                    _logger.LogWarning("No container found for connection: {ConnectionId}", connectionId);
+                    return false;
+                }
+
+                // Inspect container to get environment variables
+                var containerDetails = await _dockerClient.Containers.InspectContainerAsync(existingContainer.ID);
+                var envVars = containerDetails.Config.Env ?? new List<string>();
+                
+                // Parse environment variables
+                string? tenantId = null;
+                string? clientId = null;
+                string? clientSecret = null;
+                int? port = null;
+
+                foreach (var env in envVars)
+                {
+                    var parts = env.Split('=', 2);
+                    if (parts.Length == 2)
+                    {
+                        switch (parts[0])
+                        {
+                            case "TENANT_ID":
+                                tenantId = parts[1];
+                                break;
+                            case "CLIENT_ID":
+                                clientId = parts[1];
+                                break;
+                            case "CLIENT_SECRET":
+                                clientSecret = parts[1];
+                                break;
+                        }
+                    }
+                }
+
+                // Get the port from port bindings
+                var portBinding = existingContainer.Ports?.FirstOrDefault(p => p.PrivatePort == 8080);
+                port = portBinding?.PublicPort;
+
+                if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(clientId) || 
+                    string.IsNullOrEmpty(clientSecret) || !port.HasValue)
+                {
+                    _logger.LogError("Failed to extract environment variables from existing container");
+                    return false;
+                }
+
+                _logger.LogInformation("Redeploying with TenantId: {TenantId}, ClientId: {ClientId}, Port: {Port}", 
+                    tenantId, clientId, port);
+
+                // Redeploy using the same configuration with forced rebuild
+                // Schema will be fetched from Microsoft Graph (not needed as parameter)
+                var result = await DeployIngestionServiceAsync(
+                    connectionId,
+                    tenantId,
+                    clientId,
+                    clientSecret,
+                    new SchemaMappingConfiguration(), // Empty - will be fetched from Graph
+                    port,
+                    forceRebuild: true);  // FORCE REBUILD to get latest code
+
+                return result.Success;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to redeploy ingestion service for connection: {ConnectionId}", connectionId);
                 return false;
             }
         }

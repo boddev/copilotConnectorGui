@@ -85,13 +85,14 @@ namespace CopilotConnectorGui.Services
 
                 _logger.LogInformation("Creating schema with {PropertyCount} properties", schema.Values.Count);
                 // Create and register the schema
+                // IMPORTANT: Use proper Graph-compliant type casing (e.g. stringCollection, dateTime, int64)
                 var schemaRequest = new
                 {
                     baseType = "microsoft.graph.externalItem",
                     properties = schema.Values.Select(p => new
                     {
                         name = p.Name,
-                        type = p.Type?.ToString().ToLower() ?? "string",
+                        type = GetApiPropertyType(p.Type),
                         isSearchable = p.IsSearchable,
                         isQueryable = p.IsQueryable,
                         isRetrievable = p.IsRetrievable
@@ -352,11 +353,31 @@ namespace CopilotConnectorGui.Services
                     _logger.LogError("ODataError Code: {Code}, Message: {Message}", 
                         odataEx.Error?.Code, odataEx.Error?.Message);
                     
+                    // Log additional error details
+                    if (odataEx.ResponseHeaders != null)
+                    {
+                        _logger.LogError("Response Headers: {Headers}", string.Join(", ", odataEx.ResponseHeaders.Select(h => $"{h.Key}={string.Join(",", h.Value)}")));
+                    }
+                    if (odataEx.Error?.InnerError != null)
+                    {
+                        _logger.LogError("Inner Error: {InnerError}", System.Text.Json.JsonSerializer.Serialize(odataEx.Error.InnerError.AdditionalData));
+                    }
+                    
                     var errorMessage = "Failed to create External Connection. ";
                     var errorCode = odataEx.Error?.Code ?? "";
                     var errorMsg = odataEx.Error?.Message ?? odataEx.Message;
                     
-                    if (errorMsg.Contains("Current authenticated context is not valid") || 
+                    // Check if connection already exists
+                    if (errorCode.Contains("UnknownError") && string.IsNullOrWhiteSpace(errorMsg))
+                    {
+                        errorMessage += $"A connection with ID '{connectionId}' may already exist, or there was a silent failure.\n\n" +
+                                      "🔧 SOLUTIONS:\n" +
+                                      "1. Check the Microsoft 365 admin center for existing connections\n" +
+                                      "2. Delete the existing connection if found\n" +
+                                      "3. Try again with a different connection name\n" +
+                                      "4. If this is a new connection, verify admin consent was granted";
+                    }
+                    else if (errorMsg.Contains("Current authenticated context is not valid") || 
                         errorMsg.Contains("user sign-in") ||
                         errorMsg.Contains("Insufficient privileges"))
                     {

@@ -18,6 +18,9 @@ param(
     [string]$ImageName = "copilot-ingestion-service",
     
     [Parameter(Mandatory=$false)]
+    [string]$AclConfig = "",
+    
+    [Parameter(Mandatory=$false)]
     [switch]$RebuildImage,
     
     [Parameter(Mandatory=$false)]
@@ -225,6 +228,12 @@ $envVars = @(
     "SERVICE_PORT=$actualPort",
     "ASPNETCORE_ENVIRONMENT=Production"
 )
+
+# Add ACL configuration if provided
+if (-not [string]::IsNullOrWhiteSpace($AclConfig)) {
+    $envVars += "ACL_CONFIG=$AclConfig"
+    Write-InfoOutput "ACL configuration provided and will be applied to all items"
+}
 
 Write-InfoOutput "Starting container..."
 

@@ -413,6 +413,25 @@ namespace IngestionService.Services
                 _logger.LogInformation("Successfully fetched schema from Graph with {FieldCount} fields", 
                     schemaConfig.Fields.Count);
 
+                // Load ACL configuration from environment variable if available
+                var aclConfigJson = _configuration["ACL_CONFIG"];
+                if (!string.IsNullOrWhiteSpace(aclConfigJson))
+                {
+                    try
+                    {
+                        var aclList = System.Text.Json.JsonSerializer.Deserialize<List<ExternalItemAcl>>(aclConfigJson);
+                        if (aclList != null && aclList.Count > 0)
+                        {
+                            schemaConfig.DefaultAcls = aclList;
+                            _logger.LogInformation("Loaded {AclCount} default ACLs from configuration", aclList.Count);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to parse ACL_CONFIG from environment variable");
+                    }
+                }
+
                 return schemaConfig;
             }
             catch (Microsoft.Graph.Models.ODataErrors.ODataError odataEx)

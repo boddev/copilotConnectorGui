@@ -88,6 +88,16 @@ namespace IngestionService.Services
                     }).ToList()
                 };
 
+                // Log the request details for debugging
+                _logger.LogInformation("Sending to Graph - Item ID: {ItemId}, Properties Count: {PropCount}, Content Length: {ContentLen}, ACL Count: {AclCount}",
+                    request.Id, request.Properties.Count, (request.Content?.Length ?? 0), request.Acls?.Count ?? 0);
+                _logger.LogDebug("Properties: {Properties}", System.Text.Json.JsonSerializer.Serialize(request.Properties));
+                if (!string.IsNullOrEmpty(request.Content))
+                {
+                    _logger.LogDebug("Content: {Content}", request.Content.Substring(0, Math.Min(200, request.Content.Length)));
+                }
+                _logger.LogDebug("ACLs: {Acls}", System.Text.Json.JsonSerializer.Serialize(request.Acls));
+
                 await _graphServiceClient.External.Connections[_connectionId].Items[request.Id]
                     .PutAsync(externalItem);
 
@@ -306,9 +316,25 @@ namespace IngestionService.Services
                 {
                     additionalData[kvp.Key] = ConvertJsonElement(jsonElement);
                 }
+                else if (kvp.Value is IEnumerable<string> stringEnumerable && kvp.Value is not string)
+                {
+                    // Force List<string> for string collections to ensure proper external connector serialization
+                    additionalData[kvp.Key] = stringEnumerable.ToList();
+                    // If OData type annotation companion key exists in source properties, add it too
+                    var annotationKey = kvp.Key + "@odata.type";
+                    if (properties.ContainsKey(annotationKey) && !additionalData.ContainsKey(annotationKey))
+                    {
+                        additionalData[annotationKey] = properties[annotationKey];
+                    }
+                }
                 else
                 {
                     additionalData[kvp.Key] = kvp.Value;
+                    // Pass through annotation keys directly
+                    if (kvp.Key.EndsWith("@odata.type", StringComparison.OrdinalIgnoreCase))
+                    {
+                        additionalData[kvp.Key] = kvp.Value;
+                    }
                 }
             }
 

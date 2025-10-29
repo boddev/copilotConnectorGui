@@ -111,6 +111,13 @@
                                             </button>
                                         }
                                         
+                                        <button class="btn btn-outline-warning btn-sm" 
+                                                @onclick="(() => RedeployService(service.ConnectionId))"
+                                                disabled="@_actionInProgress"
+                                                title="Rebuild and restart container with latest code">
+                                            <i class="bi bi-arrow-clockwise"></i> Redeploy
+                                        </button>
+                                        
                                         <button class="btn btn-outline-info btn-sm" 
                                                 @onclick="(() => ViewLogs(service.ConnectionId))"
                                                 disabled="@_actionInProgress">
@@ -281,6 +288,41 @@
         {
             _errorMessage = $"Error checking health: {ex.Message}";
             Logger.LogError(ex, "Failed to check health for {ConnectionId}", connectionId);
+        }
+        finally
+        {
+            _actionInProgress = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RedeployService(string connectionId)
+    {
+        try
+        {
+            _actionInProgress = true;
+            _errorMessage = string.Empty;
+            StateHasChanged();
+
+            _successMessage = $"Redeploying service {connectionId}... This may take a minute.";
+            StateHasChanged();
+
+            var success = await ContainerService.RedeployIngestionServiceAsync(connectionId);
+            
+            if (success)
+            {
+                _successMessage = $"Service {connectionId} redeployed successfully with latest code!";
+                await RefreshServices();
+            }
+            else
+            {
+                _errorMessage = $"Failed to redeploy service {connectionId}. Check logs for details.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error redeploying service: {ex.Message}";
+            Logger.LogError(ex, "Failed to redeploy service {ConnectionId}", connectionId);
         }
         finally
         {
