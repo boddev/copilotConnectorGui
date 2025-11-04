@@ -4,6 +4,7 @@ using Microsoft.Graph.Models.ExternalConnectors;
 using Azure.Identity;
 using IngestionService.Models;
 using System.Text.Json;
+using Microsoft.Kiota.Abstractions.Serialization;
 
 namespace IngestionService.Services
 {
@@ -91,12 +92,44 @@ namespace IngestionService.Services
                 // Log the request details for debugging
                 _logger.LogInformation("Sending to Graph - Item ID: {ItemId}, Properties Count: {PropCount}, Content Length: {ContentLen}, ACL Count: {AclCount}",
                     request.Id, request.Properties.Count, (request.Content?.Length ?? 0), request.Acls?.Count ?? 0);
-                _logger.LogDebug("Properties: {Properties}", System.Text.Json.JsonSerializer.Serialize(request.Properties));
+                _logger.LogInformation("Properties: {Properties}", System.Text.Json.JsonSerializer.Serialize(request.Properties, new JsonSerializerOptions { WriteIndented = true }));
+                
+                // Log AdditionalData separately to see what's actually being sent
+                _logger.LogInformation("AdditionalData being sent to Graph:");
+                foreach (var kvp in externalItem.Properties.AdditionalData)
+                {
+                    var valueType = kvp.Value?.GetType().Name ?? "null";
+                    string valueString;
+                    
+                    if (kvp.Value is IEnumerable<string> strColl)
+                    {
+                        valueString = $"[{string.Join(", ", strColl)}] (Count: {strColl.Count()})";
+                    }
+                    else if (kvp.Value is UntypedArray untypedArr)
+                    {
+                        try
+                        {
+                            var arrValue = untypedArr.GetValue();
+                            valueString = $"UntypedArray: {System.Text.Json.JsonSerializer.Serialize(arrValue)}";
+                        }
+                        catch
+                        {
+                            valueString = "UntypedArray (cannot serialize)";
+                        }
+                    }
+                    else
+                    {
+                        valueString = kvp.Value?.ToString() ?? "null";
+                    }
+                    
+                    _logger.LogInformation("  {Key} ({Type}): {Value}", kvp.Key, valueType, valueString);
+                }
+                
                 if (!string.IsNullOrEmpty(request.Content))
                 {
-                    _logger.LogDebug("Content: {Content}", request.Content.Substring(0, Math.Min(200, request.Content.Length)));
+                    _logger.LogInformation("Content: {Content}", request.Content.Substring(0, Math.Min(200, request.Content.Length)));
                 }
-                _logger.LogDebug("ACLs: {Acls}", System.Text.Json.JsonSerializer.Serialize(request.Acls));
+                _logger.LogInformation("ACLs: {Acls}", System.Text.Json.JsonSerializer.Serialize(request.Acls, new JsonSerializerOptions { WriteIndented = true }));
 
                 await _graphServiceClient.External.Connections[_connectionId].Items[request.Id]
                     .PutAsync(externalItem);
@@ -108,6 +141,34 @@ namespace IngestionService.Services
                     Success = true,
                     ItemId = request.Id,
                     CreatedAt = DateTime.UtcNow
+                };
+            }
+            catch (Microsoft.Graph.Models.ODataErrors.ODataError odataEx)
+            {
+                _logger.LogError(odataEx, "OData error creating external item: {ItemId}", request.Id);
+                _logger.LogError("Error Code: {ErrorCode}", odataEx.Error?.Code);
+                _logger.LogError("Error Message: {ErrorMessage}", odataEx.Error?.Message);
+                _logger.LogError("HTTP Status: {StatusCode}", odataEx.ResponseStatusCode);
+                
+                if (odataEx.Error?.Details != null)
+                {
+                    foreach (var detail in odataEx.Error.Details)
+                    {
+                        _logger.LogError("Error Detail - Code: {Code}, Message: {Message}", detail.Code, detail.Message);
+                    }
+                }
+                
+                string detailedError = $"{odataEx.Error?.Message}";
+                if (odataEx.Error?.Details != null && odataEx.Error.Details.Count > 0)
+                {
+                    detailedError += $" Details: {string.Join("; ", odataEx.Error.Details.Select(d => $"{d.Code}: {d.Message}"))}";
+                }
+                
+                return new ExternalItemResponse
+                {
+                    Success = false,
+                    ItemId = request.Id,
+                    ErrorMessage = detailedError
                 };
             }
             catch (Exception ex)
@@ -311,6 +372,12 @@ namespace IngestionService.Services
 
             foreach (var kvp in properties)
             {
+                // Skip OData type annotations - they cause issues with Microsoft Graph External Connectors
+                if (kvp.Key.EndsWith("@odata.type", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 // Convert complex objects to JSON if needed
                 if (kvp.Value is JsonElement jsonElement)
                 {
@@ -318,23 +385,12 @@ namespace IngestionService.Services
                 }
                 else if (kvp.Value is IEnumerable<string> stringEnumerable && kvp.Value is not string)
                 {
-                    // Force List<string> for string collections to ensure proper external connector serialization
+                    // Keep as simple List<string> - let Kiota handle serialization naturally
                     additionalData[kvp.Key] = stringEnumerable.ToList();
-                    // If OData type annotation companion key exists in source properties, add it too
-                    var annotationKey = kvp.Key + "@odata.type";
-                    if (properties.ContainsKey(annotationKey) && !additionalData.ContainsKey(annotationKey))
-                    {
-                        additionalData[annotationKey] = properties[annotationKey];
-                    }
                 }
                 else
                 {
                     additionalData[kvp.Key] = kvp.Value;
-                    // Pass through annotation keys directly
-                    if (kvp.Key.EndsWith("@odata.type", StringComparison.OrdinalIgnoreCase))
-                    {
-                        additionalData[kvp.Key] = kvp.Value;
-                    }
                 }
             }
 

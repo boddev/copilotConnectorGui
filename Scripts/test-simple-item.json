@@ -1,0 +1,15 @@
+{
+  "id": "simple-test-001",
+  "properties": {
+    "title": "Simple Test Item",
+    "url": "https://example.com/simple-test-001"
+  },
+  "content": "This is a simple test item with minimal required fields to test schema compatibility.",
+  "acls": [
+    {
+      "type": "everyone",
+      "value": "everyone",
+      "accessType": "grant"
+    }
+  ]
+}

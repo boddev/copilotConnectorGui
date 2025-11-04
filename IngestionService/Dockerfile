@@ -5,9 +5,9 @@ EXPOSE 8080
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY ["IngestionService.csproj", "."]
-RUN dotnet restore "./IngestionService.csproj"
+RUN dotnet restore "IngestionService.csproj"
 COPY . .
-WORKDIR "/src/."
+WORKDIR "/src"
 RUN dotnet build "IngestionService.csproj" -c Release -o /app/build
 
 FROM build AS publish

@@ -2124,6 +2124,9 @@
             // Create schema mapping configuration for the existing connection
             var mappingConfig = JsonFieldParserService.ParseJsonToSchema(_configuration.JsonSample);
             SemanticLabelMappingService.AssignSemanticLabels(mappingConfig.Fields);
+            
+            // Copy AllowedGroupIds from configuration to mappingConfig for ACL enforcement
+            mappingConfig.AllowedGroupIds = _configuration.AllowedGroupIds ?? new List<string>();
 
             _statusMessage = "🐳 Building and deploying ingestion service container...";
             StateHasChanged();

@@ -202,25 +202,31 @@ externalItems.MapPost("/raw", async (
                     switch (fieldType)
                     {
                         case "StringCollection":
-                            // If we have a single string, wrap it; if we have a mixed object array, convert to strings
+                            // WORKAROUND: Microsoft Graph External Connectors has issues with StringCollection in AdditionalData
+                            // Convert to comma-separated string instead
                             if (value is string single)
                             {
-                                request.Properties[key] = new List<string> { single };
+                                // Single string - keep as is for now (will be treated as CSV)
+                                request.Properties[key] = single;
                             }
                             else if (value is IEnumerable<string> strEnum)
                             {
-                                // ensure concrete list for serializer
-                                request.Properties[key] = strEnum.ToList();
+                                // Convert array to comma-separated string
+                                var csvValue = string.Join(", ", strEnum.Where(s => !string.IsNullOrWhiteSpace(s)));
+                                request.Properties[key] = csvValue;
+                                logger.LogWarning("Converted StringCollection field '{Field}' to comma-separated string due to Graph API limitations: {Value}", key, csvValue);
                             }
                             else if (value is IEnumerable<object> objEnum)
                             {
-                                request.Properties[key] = objEnum.Select(o => o?.ToString() ?? string.Empty).ToList();
+                                // Convert object array to comma-separated string
+                                var csvValue = string.Join(", ", objEnum.Select(o => o?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s)));
+                                request.Properties[key] = csvValue;
+                                logger.LogWarning("Converted StringCollection field '{Field}' to comma-separated string due to Graph API limitations: {Value}", key, csvValue);
                             }
-                            // Add OData type annotation for collection of strings
-                            var annotationKey = key + "@odata.type";
-                            if (!request.Properties.ContainsKey(annotationKey))
+                            else
                             {
-                                request.Properties[annotationKey] = "Collection(String)";
+                                // Fallback - convert to string
+                                request.Properties[key] = value?.ToString() ?? string.Empty;
                             }
                             break;
                         case "String":
@@ -235,7 +241,8 @@ externalItems.MapPost("/raw", async (
                         case "DateTime":
                             if (value is string dtStr && DateTimeOffset.TryParse(dtStr, out var dto))
                             {
-                                request.Properties[key] = dto; // Kiota should serialize DateTimeOffset correctly
+                                // Convert to simplified ISO 8601 format without microseconds
+                                request.Properties[key] = dto.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
                             }
                             break;
                         case "Double":
@@ -259,12 +266,8 @@ externalItems.MapPost("/raw", async (
                     }
                 }
 
-                // Optional: add iconUrl if schema expects it and it's missing
-                if (schemaConfig.Fields.ContainsKey("iconUrl") && !request.Properties.ContainsKey("iconUrl"))
-                {
-                    request.Properties["iconUrl"] = "https://example.com/default-icon.png";
-                    logger.LogInformation("Added default iconUrl property.");
-                }
+                // Don't add iconUrl automatically - let it be optional
+                // The "UnknownFutureValue" semantic label on iconUrl might cause issues
             }
         }
         catch (Exception alignEx)
@@ -310,6 +313,10 @@ externalItems.MapPost("/raw", async (
                 logger.LogInformation("No default ACLs configured, using 'everyone' in tenant");
             }
         }
+        
+        // Log final properties after transformation for debugging
+        logger.LogInformation("Final properties after transformation: {Properties}", 
+            System.Text.Json.JsonSerializer.Serialize(request.Properties, new JsonSerializerOptions { WriteIndented = true }));
         
         // Validate the transformed request
         var validationResult = validationService.ValidateExternalItem(request);
@@ -629,6 +636,99 @@ externalItems.MapGet("/schema", (SchemaValidationService validationService) =>
 .WithSummary("Get schema configuration")
 .WithDescription("Returns the schema configuration for this external connection")
 .Produces<SchemaConfiguration>(200);
+
+// Diagnostic endpoint to test connection details
+externalItems.MapGet("/diagnostics", async (
+    GraphIngestionService ingestionService,
+    SchemaValidationService validationService,
+    IConfiguration config,
+    ILogger<Program> logger) =>
+{
+    try
+    {
+        var connectionId = config["CONNECTION_ID"];
+        var graphClient = await ingestionService.GetGraphClientAsync();
+        
+        var diagnostics = new
+        {
+            ConnectionId = connectionId,
+            GraphClientAvailable = graphClient != null,
+            SchemaConfiguration = validationService.GetSchemaConfiguration(),
+            Timestamp = DateTime.UtcNow
+        };
+
+        if (graphClient != null)
+        {
+            try
+            {
+                // Try to get connection details
+                var connection = await graphClient.External.Connections[connectionId].GetAsync();
+                var connectionInfo = new
+                {
+                    Name = connection?.Name,
+                    Id = connection?.Id,
+                    State = connection?.State?.ToString(),
+                    Description = connection?.Description
+                };
+                
+                // Try to get schema details
+                var schema = await graphClient.External.Connections[connectionId].Schema.GetAsync();
+                var schemaInfo = new
+                {
+                    BaseType = schema?.BaseType,
+                    PropertyCount = schema?.Properties?.Count ?? 0,
+                    Properties = schema?.Properties?.Select(p => new
+                    {
+                        Name = p.Name,
+                        Type = p.Type?.ToString(),
+                        IsSearchable = p.IsSearchable,
+                        IsQueryable = p.IsQueryable,
+                        IsRetrievable = p.IsRetrievable,
+                        IsRefinable = p.IsRefinable,
+                        Labels = p.Labels?.Select(l => l?.ToString()).ToArray()
+                    }).ToArray()
+                };
+
+                return Results.Ok(new
+                {
+                    diagnostics.ConnectionId,
+                    diagnostics.GraphClientAvailable,
+                    Connection = connectionInfo,
+                    Schema = schemaInfo,
+                    diagnostics.SchemaConfiguration,
+                    diagnostics.Timestamp
+                });
+            }
+            catch (Exception graphEx)
+            {
+                logger.LogError(graphEx, "Error getting Graph connection details");
+                return Results.Ok(new
+                {
+                    diagnostics.ConnectionId,
+                    diagnostics.GraphClientAvailable,
+                    GraphError = graphEx.Message,
+                    diagnostics.SchemaConfiguration,
+                    diagnostics.Timestamp
+                });
+            }
+        }
+
+        return Results.Ok(diagnostics);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error in diagnostics endpoint");
+        return Results.Problem(
+            statusCode: 500,
+            detail: ex.Message,
+            title: "Diagnostics failed");
+    }
+})
+.WithName("GetDiagnostics")
+.WithSummary("Get diagnostic information")
+.WithDescription("Returns diagnostic information about the connection and schema")
+.WithTags("Diagnostics")
+.WithOpenApi();
 
 // ===== HEALTH CHECK ENDPOINTS =====
 

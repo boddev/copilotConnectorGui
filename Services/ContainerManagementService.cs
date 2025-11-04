@@ -94,13 +94,14 @@ namespace CopilotConnectorGui.Services
                 {
                     var aclList = schemaConfig.AllowedGroupIds.Select(groupId => new
                     {
-                        Type = "group",
-                        Value = groupId,
-                        AccessType = "grant"
+                        type = "group",
+                        value = groupId,
+                        accessType = "grant"
                     }).ToList();
                     
                     aclConfigJson = System.Text.Json.JsonSerializer.Serialize(aclList);
-                    _logger.LogInformation("Passing {AclCount} ACL group(s) to ingestion service", schemaConfig.AllowedGroupIds.Count);
+                    _logger.LogInformation("Passing {AclCount} ACL group(s) to ingestion service: {AclJson}", 
+                        schemaConfig.AllowedGroupIds.Count, aclConfigJson);
                 }
 
                 // Build PowerShell command
@@ -119,10 +120,12 @@ namespace CopilotConnectorGui.Services
                 // Add ACL configuration if available
                 if (!string.IsNullOrWhiteSpace(aclConfigJson))
                 {
-                    // Escape the JSON for PowerShell
-                    var escapedAclConfig = aclConfigJson.Replace("\"", "`\"");
-                    argumentsList.Add("-AclConfig");
-                    argumentsList.Add($"\"{escapedAclConfig}\"");
+                    // Base64 encode the JSON to avoid any escaping issues
+                    var aclConfigBytes = System.Text.Encoding.UTF8.GetBytes(aclConfigJson);
+                    var aclConfigBase64 = Convert.ToBase64String(aclConfigBytes);
+                    argumentsList.Add("-AclConfigBase64");
+                    argumentsList.Add($"\"{aclConfigBase64}\"");
+                    _logger.LogInformation("ACL Config being passed (before encoding): {AclConfig}", aclConfigJson);
                 }
 
                 // Add rebuild flag if requested
@@ -132,10 +135,13 @@ namespace CopilotConnectorGui.Services
                 }
 
                 var arguments = argumentsList.ToArray();
+                var fullCommand = string.Join(" ", arguments);
+                
+                _logger.LogInformation("Executing PowerShell command: powershell.exe {Command}", fullCommand);
 
                 using var process = new System.Diagnostics.Process();
                 process.StartInfo.FileName = "powershell.exe";
-                process.StartInfo.Arguments = string.Join(" ", arguments);
+                process.StartInfo.Arguments = fullCommand;
                 process.StartInfo.UseShellExecute = false;
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardError = true;

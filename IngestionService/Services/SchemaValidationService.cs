@@ -180,9 +180,10 @@ namespace IngestionService.Services
                         break;
 
                     case "stringcollection":
-                        if (!IsStringCollection(fieldValue))
+                        // Accept both arrays and comma-separated strings (workaround for Graph API limitations)
+                        if (!IsStringCollection(fieldValue) && GetStringValue(fieldValue) == null)
                         {
-                            result.Errors.Add($"Field '{fieldName}' must be an array of strings");
+                            result.Errors.Add($"Field '{fieldName}' must be an array of strings or a comma-separated string");
                             result.IsValid = false;
                         }
                         break;
@@ -413,22 +414,62 @@ namespace IngestionService.Services
                 _logger.LogInformation("Successfully fetched schema from Graph with {FieldCount} fields", 
                     schemaConfig.Fields.Count);
 
-                // Load ACL configuration from environment variable if available
-                var aclConfigJson = _configuration["ACL_CONFIG"];
+                // Load ACL configuration from environment variables if available
+                string? aclConfigJson = _configuration["ACL_CONFIG"];
+                if (string.IsNullOrWhiteSpace(aclConfigJson))
+                {
+                    var aclConfigBase64 = _configuration["ACL_CONFIG_BASE64"];
+                    if (!string.IsNullOrWhiteSpace(aclConfigBase64))
+                    {
+                        try
+                        {
+                            var decodedBytes = Convert.FromBase64String(aclConfigBase64);
+                            aclConfigJson = System.Text.Encoding.UTF8.GetString(decodedBytes);
+                            _logger.LogInformation("Decoded ACL configuration from base64");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to decode ACL_CONFIG_BASE64 environment variable");
+                        }
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(aclConfigJson))
                 {
                     try
                     {
-                        var aclList = System.Text.Json.JsonSerializer.Deserialize<List<ExternalItemAcl>>(aclConfigJson);
+                        var serializerOptions = new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        };
+
+                        var aclList = System.Text.Json.JsonSerializer.Deserialize<List<ExternalItemAcl>>(aclConfigJson, serializerOptions);
                         if (aclList != null && aclList.Count > 0)
                         {
+                            foreach (var acl in aclList)
+                            {
+                                if (string.IsNullOrWhiteSpace(acl.Type))
+                                {
+                                    acl.Type = "group";
+                                }
+                                if (string.IsNullOrWhiteSpace(acl.Value))
+                                {
+                                    _logger.LogWarning("ACL entry missing value. Defaulting to 'everyone'.");
+                                    acl.Value = "everyone";
+                                }
+                                if (string.IsNullOrWhiteSpace(acl.AccessType))
+                                {
+                                    acl.AccessType = "grant";
+                                }
+                            }
+                            
                             schemaConfig.DefaultAcls = aclList;
                             _logger.LogInformation("Loaded {AclCount} default ACLs from configuration", aclList.Count);
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to parse ACL_CONFIG from environment variable");
+                        _logger.LogWarning(ex, "Failed to parse ACL configuration from environment variable");
                     }
                 }
 

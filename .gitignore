@@ -415,3 +415,4 @@ obj/Debug/net9.0/CopilotConnectorGui.csproj.FileListAbsolute.txt
 UI_STATE_PERSISTENCE_FIX.md
 DEPLOYMENT_AUTOMATION_GUIDE.md
 TestDeployment.txt
+appsettings.json

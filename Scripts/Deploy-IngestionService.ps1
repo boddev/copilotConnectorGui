@@ -21,6 +21,9 @@ param(
     [string]$AclConfig = "",
     
     [Parameter(Mandatory=$false)]
+    [string]$AclConfigBase64 = "",
+    
+    [Parameter(Mandatory=$false)]
     [switch]$RebuildImage,
     
     [Parameter(Mandatory=$false)]
@@ -230,9 +233,13 @@ $envVars = @(
 )
 
 # Add ACL configuration if provided
-if (-not [string]::IsNullOrWhiteSpace($AclConfig)) {
+if (-not [string]::IsNullOrWhiteSpace($AclConfigBase64)) {
+    $envVars += "ACL_CONFIG_BASE64=$AclConfigBase64"
+    Write-InfoOutput "ACL configuration (base64) will be applied to all items"
+}
+elseif (-not [string]::IsNullOrWhiteSpace($AclConfig)) {
     $envVars += "ACL_CONFIG=$AclConfig"
-    Write-InfoOutput "ACL configuration provided and will be applied to all items"
+    Write-InfoOutput "ACL configuration will be applied to all items"
 }
 
 Write-InfoOutput "Starting container..."
