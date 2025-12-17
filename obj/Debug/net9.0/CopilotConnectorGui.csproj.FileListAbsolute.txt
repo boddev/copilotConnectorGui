@@ -60,7 +60,6 @@ C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\CopilotConne
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\CopilotConnectorGui.sourcelink.json
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\scopedcss\bundle\CopilotConnectorGui.styles.css
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\compressed\1e3q1ld71t-9aywbnexf5.gz
-C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\compressed\d48lrsoisr-4tui7uujz5.gz
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\staticwebassets.build.json
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\staticwebassets.development.json
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\staticwebassets.build.endpoints.json
@@ -76,3 +75,18 @@ C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\refint\Copil
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\CopilotConnectorGui.pdb
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\CopilotConnectorGui.genruntimeconfig.cache
 C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\ref\CopilotConnectorGui.dll
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-batch.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-product1.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-product2.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-product3.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-schema.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Scripts\test-simple-item.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\Docker.DotNet.dll
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\ICSharpCode.SharpZipLib.dll
+C:\Users\BrianODo\source\repos\copilotConnectorGui\obj\Debug\net9.0\compressed\d48lrsoisr-abjtkbykue.gz
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot594895dbef9c4-acls.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot594895dbef9c4-appsettings.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot594895dbef9c4-config.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot7fd1205633ec4-acls.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot7fd1205633ec4-appsettings.json
+C:\Users\BrianODo\source\repos\copilotConnectorGui\bin\Debug\net9.0\IngestionServiceConfigs\copilot7fd1205633ec4-config.json

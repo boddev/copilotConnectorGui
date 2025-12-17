@@ -6,6 +6,49 @@ using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Support loading configuration from ingestion-config.json file
+// This allows running the service independently without environment variables
+var configFilePath = Path.Combine(builder.Environment.ContentRootPath, "ingestion-config.json");
+if (File.Exists(configFilePath))
+{
+    Console.WriteLine($"Loading configuration from {configFilePath}");
+    builder.Configuration.AddJsonFile("ingestion-config.json", optional: true, reloadOnChange: true);
+    
+    // Map config file properties to environment variable names expected by the service
+    var config = builder.Configuration;
+    if (!string.IsNullOrEmpty(config["tenantId"]))
+    {
+        builder.Configuration["TENANT_ID"] = config["tenantId"];
+        builder.Configuration["CLIENT_ID"] = config["clientId"];
+        builder.Configuration["CLIENT_SECRET"] = config["clientSecret"];
+        builder.Configuration["CONNECTION_ID"] = config["connectionId"];
+        builder.Configuration["DEFAULT_URL_BASE"] = config["defaultUrlBase"];
+        
+        // Handle default ACLs if present
+        var aclsSection = config.GetSection("defaultAcls");
+        if (aclsSection.Exists())
+        {
+            try
+            {
+                var aclsJson = System.Text.Json.JsonSerializer.Serialize(aclsSection.Get<List<Dictionary<string, string>>>());
+                var aclBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(aclsJson));
+                builder.Configuration["ACL_CONFIG_BASE64"] = aclBase64;
+                Console.WriteLine($"Loaded {aclsSection.Get<List<Dictionary<string, string>>>()?.Count ?? 0} ACL entries from config file");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to parse ACLs from config file: {ex.Message}");
+            }
+        }
+        
+        Console.WriteLine("Configuration loaded from file and mapped to expected keys");
+    }
+}
+else
+{
+    Console.WriteLine("No ingestion-config.json found, using environment variables/appsettings");
+}
+
 // Configure JSON options
 builder.Services.ConfigureHttpJsonOptions(options =>
 {

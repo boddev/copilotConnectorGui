@@ -416,3 +416,5 @@ UI_STATE_PERSISTENCE_FIX.md
 DEPLOYMENT_AUTOMATION_GUIDE.md
 TestDeployment.txt
 appsettings.json
+TENANT_LOGIN_FEATURE.md
+IngestionServiceConfigs/*

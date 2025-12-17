@@ -130,6 +130,25 @@ window.appendTerminalOutput = (sessionId, type, content) => {
     }
 };
 
+// Function to download files from Blazor
+window.downloadFile = (filename, contentType, content) => {
+    // Create a blob from the content
+    const blob = new Blob([content], { type: contentType });
+    
+    // Create a link element
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = filename;
+    
+    // Append to body, click, and remove
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Clean up the URL object
+    window.URL.revokeObjectURL(link.href);
+};
+
 // Focus terminal input when clicking anywhere in the terminal
 document.addEventListener('click', (e) => {
     const terminal = e.target.closest('.terminal-container');

@@ -1,0 +1,199 @@
+@using CopilotConnectorGui.Services
+@using System.ComponentModel.DataAnnotations
+@inject TenantCredentialService CredentialService
+
+<div class="modal fade @(_showModal ? "show d-block" : "")" tabindex="-1" role="dialog" style="@(_showModal ? "background-color: rgba(0,0,0,0.5);" : "")">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-key"></i> Login to Another Tenant
+                </h5>
+                <button type="button" class="btn-close" @onclick="Close" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        @_errorMessage
+                        <button type="button" class="btn-close" @onclick="() => _errorMessage = string.Empty"></button>
+                    </div>
+                }
+
+                @if (CredentialService.HasOverride())
+                {
+                    <div class="alert alert-success" role="alert">
+                        <i class="bi bi-check-circle"></i> Currently using custom tenant credentials
+                        <div class="mt-2">
+                            <small class="text-muted">
+                                <strong>Tenant ID:</strong> @CredentialService.GetTenantId()<br/>
+                                <strong>Client ID:</strong> @CredentialService.GetClientId()
+                            </small>
+                        </div>
+                    </div>
+                }
+
+                <EditForm Model="_loginModel" OnValidSubmit="HandleLogin">
+                    <DataAnnotationsValidator />
+                    
+                    <div class="mb-3">
+                        <label for="tenantId" class="form-label">Tenant ID</label>
+                        <InputText id="tenantId" class="form-control" @bind-Value="_loginModel.TenantId" 
+                                   placeholder="Enter tenant GUID" />
+                        <ValidationMessage For="@(() => _loginModel.TenantId)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="clientId" class="form-label">Client ID</label>
+                        <InputText id="clientId" class="form-control" @bind-Value="_loginModel.ClientId" 
+                                   placeholder="Enter application (client) ID" />
+                        <ValidationMessage For="@(() => _loginModel.ClientId)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="clientSecret" class="form-label">Client Secret</label>
+                        <div class="input-group">
+                            <InputText id="clientSecret" type="@(_showPassword ? "text" : "password")" 
+                                       class="form-control" @bind-Value="_loginModel.ClientSecret" 
+                                       placeholder="Enter client secret value" />
+                            <button class="btn btn-outline-secondary" type="button" @onclick="TogglePasswordVisibility">
+                                <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                            </button>
+                        </div>
+                        <ValidationMessage For="@(() => _loginModel.ClientSecret)" />
+                    </div>
+
+                    <div class="alert alert-info" role="alert">
+                        <small>
+                            <i class="bi bi-info-circle"></i> These credentials will override the default settings 
+                            from appsettings.json for the duration of this session.
+                        </small>
+                    </div>
+
+                    <div class="d-flex gap-2 justify-content-end">
+                        @if (CredentialService.HasOverride())
+                        {
+                            <button type="button" class="btn btn-outline-danger" @onclick="ResetToDefaults">
+                                <i class="bi bi-arrow-counterclockwise"></i> Reset to Defaults
+                            </button>
+                        }
+                        <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                        <button type="submit" class="btn btn-primary" disabled="@_isLoading">
+                            @if (_isLoading)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            }
+                            <i class="bi bi-box-arrow-in-right"></i> Apply Credentials
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool ShowModal { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowModalChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnCredentialsChanged { get; set; }
+
+    private bool _showModal => ShowModal;
+    private TenantLoginModel _loginModel = new TenantLoginModel();
+    private string _errorMessage = string.Empty;
+    private bool _isLoading = false;
+    private bool _showPassword = false;
+
+    protected override void OnParametersSet()
+    {
+        if (_showModal)
+        {
+            // Pre-populate with current credentials if they exist
+            var (tenantId, clientId, _) = CredentialService.GetCurrentCredentials();
+            _loginModel = new TenantLoginModel
+            {
+                TenantId = tenantId,
+                ClientId = clientId,
+                ClientSecret = string.Empty
+            };
+        }
+    }
+
+    private void TogglePasswordVisibility()
+    {
+        _showPassword = !_showPassword;
+    }
+
+    private async Task HandleLogin()
+    {
+        _isLoading = true;
+        _errorMessage = string.Empty;
+
+        try
+        {
+            // Validate the credentials format
+            if (string.IsNullOrWhiteSpace(_loginModel.TenantId) || 
+                string.IsNullOrWhiteSpace(_loginModel.ClientId) || 
+                string.IsNullOrWhiteSpace(_loginModel.ClientSecret))
+            {
+                _errorMessage = "All fields are required.";
+                _isLoading = false;
+                return;
+            }
+
+            // Apply the credentials
+            CredentialService.SetCredentials(
+                _loginModel.TenantId.Trim(),
+                _loginModel.ClientId.Trim(),
+                _loginModel.ClientSecret.Trim()
+            );
+
+            // Notify parent component
+            await OnCredentialsChanged.InvokeAsync();
+
+            // Close the modal
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error applying credentials: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ResetToDefaults()
+    {
+        CredentialService.ClearCredentials();
+        await OnCredentialsChanged.InvokeAsync();
+        await Close();
+    }
+
+    private async Task Close()
+    {
+        await ShowModalChanged.InvokeAsync(false);
+    }
+
+    public class TenantLoginModel
+    {
+        [Required(ErrorMessage = "Tenant ID is required")]
+        [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", 
+            ErrorMessage = "Tenant ID must be a valid GUID")]
+        public string TenantId { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Client ID is required")]
+        [RegularExpression(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", 
+            ErrorMessage = "Client ID must be a valid GUID")]
+        public string ClientId { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Client Secret is required")]
+        [MinLength(10, ErrorMessage = "Client Secret must be at least 10 characters")]
+        public string ClientSecret { get; set; } = string.Empty;
+    }
+}

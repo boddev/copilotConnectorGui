@@ -8,6 +8,7 @@
 @using CopilotConnectorGui.Models
 @using CopilotConnectorGui.Components
 @using System.Security.Claims
+@using System.Text.Json
 @using Microsoft.AspNetCore.Components
 @implements IDisposable
 @attribute [Authorize]
@@ -18,6 +19,7 @@
 @inject SemanticLabelMappingService SemanticLabelMappingService
 @inject ContainerManagementService ContainerService
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject TenantCredentialService CredentialService
 @inject IJSRuntime JSRuntime
 
 <PageTitle>Copilot Connector Setup</PageTitle>
@@ -519,6 +521,15 @@
                                     <DataAnnotationsValidator />
                                     <ValidationSummary />
 
+                                    @if (CredentialService.HasOverride())
+                                    {
+                                        <div class="alert alert-info" role="alert">
+                                            <i class="bi bi-info-circle"></i> <strong>Custom Tenant Active:</strong> 
+                                            Using overridden credentials for tenant <code>@CredentialService.GetTenantId()</code>.
+                                            Operations will be performed against this tenant.
+                                        </div>
+                                    }
+
                                     <div class="mb-3">
                                         <label for="tenantId" class="form-label">Tenant ID</label>
                                         <InputText id="tenantId" class="form-control" @bind-Value="_configuration.TenantId" placeholder="Auto-populated from your login" readonly />
@@ -792,6 +803,15 @@
                                 <div class="alert alert-success">
                                     <strong>Congratulations!</strong> Your Microsoft Graph External Connection has been created successfully.
                                 </div>
+                                
+                                <div class="mb-3 d-grid">
+                                    <button class="btn btn-success btn-lg" @onclick="DownloadConfigFiles">
+                                        <i class="bi bi-download"></i> Download Configuration Files
+                                    </button>
+                                    <small class="text-muted text-center mt-2">
+                                        Download config files to run the ingestion service independently on any machine
+                                    </small>
+                                </div>
 
                                 <div class="row">
                                     <div class="col-md-6">
@@ -859,6 +879,15 @@
                                         <div class="alert alert-warning">
                                             <strong>Important:</strong> Save these credentials securely. The client secret cannot be retrieved again.
                                         </div>
+                                        
+                                        <div class="d-grid gap-2">
+                                            <button class="btn btn-success btn-lg" @onclick="DownloadConfigFiles">
+                                                <i class="bi bi-download"></i> Download Configuration Files
+                                            </button>
+                                            <small class="text-muted text-center">
+                                                Downloads config files for running the ingestion service independently
+                                            </small>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -905,18 +934,36 @@
                                         }
                                         else
                                         {
-                                            <button class="btn btn-success" @onclick="DeployIngestionService">
-                                                <i class="bi bi-cloud-upload"></i> Deploy Ingestion Service
-                                            </button>
+                                            <div class="d-flex gap-2">
+                                                <button class="btn btn-outline-primary" @onclick="DownloadConfigFiles">
+                                                    <i class="bi bi-download"></i> Download Config Files
+                                                </button>
+                                                <button class="btn btn-success" @onclick="DeployIngestionService">
+                                                    <i class="bi bi-cloud-upload"></i> Deploy Ingestion Service
+                                                </button>
+                                            </div>
+                                            <div class="mt-2">
+                                                <small class="text-muted">
+                                                    <i class="bi bi-info-circle"></i> Download config files to run the ingestion service independently, or deploy now to run in Docker.
+                                                </small>
+                                            </div>
                                         }
                                     </div>
                                     
-                                    <div class="d-flex gap-2">
+                                    <div class="d-flex gap-2 mt-3">
+                                        <button class="btn btn-outline-success" @onclick="DownloadConfigFiles">
+                                            <i class="bi bi-download"></i> Download Config Files
+                                        </button>
                                         <a href="/ingestion-services" class="btn btn-outline-primary">
                                             <i class="bi bi-hdd-stack"></i> View All Services
                                         </a>
                                         <button class="btn btn-primary" @onclick="StartOver">Create Another Connection</button>
                                         <a href="MicrosoftIdentity/Account/SignOut" class="btn btn-outline-secondary">Sign Out</a>
+                                    </div>
+                                    <div class="mt-2">
+                                        <small class="text-muted">
+                                            <i class="bi bi-info-circle"></i> Download config files to run the ingestion service independently on any machine.
+                                        </small>
                                     </div>
                                 </div>
                             </div>
@@ -1096,9 +1143,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Try to restore state if we're coming back from admin consent
-        await TryRestoreStateAfterConsent();
-        
         if (AuthenticationStateTask != null)
         {
             var authState = await AuthenticationStateTask;
@@ -1122,6 +1166,13 @@
     {
         if (firstRender)
         {
+            // Restore state after admin consent (requires JS interop, so it must run after first render)
+            var restored = await TryRestoreStateAfterConsent();
+            if (restored)
+            {
+                StateHasChanged();
+            }
+
             // Check if auto-login failed (can only do this after render)
             try
             {
@@ -1458,6 +1509,8 @@
             await Task.Delay(30000); // Wait 30 seconds for credential propagation
 
             // Step 2: Create Schema and Connection
+            // Use the newly created app registration credentials (not TenantCredentialService)
+            // The app was just created for this tenant in the previous step
             _forceShowUI = true; // Force UI to stay visible during processing
             _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
                 _configuration.TenantId,
@@ -1687,6 +1740,8 @@
 
             // Schema creation failed or doesn't exist, so retry the full schema creation
             LogActivity("Retrying schema and connection creation...", ActivityLogType.Info);
+            
+            // Use the app registration credentials from the previous step
             _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
                 _configuration.TenantId,
                 _appRegistrationResult.ApplicationId,
@@ -1763,6 +1818,7 @@
 
                 try
                 {
+                    // Use the app registration credentials from the previous step
                     _schemaResult = await SchemaService.CreateSchemaAndConnectionAsync(
                         _configuration.TenantId,
                         _appRegistrationResult.ApplicationId,
@@ -2130,11 +2186,11 @@
 
             _statusMessage = "🐳 Building and deploying ingestion service container...";
             StateHasChanged();
-            
+
             // Deploy container for the EXISTING connection (don't create a new connection)
             var deploymentResult = await ContainerService.DeployIngestionServiceAsync(
                 _schemaResult.ConnectionId!,  // Use EXISTING connection ID
-                currentTenantId,  // Use current user's tenant ID
+                _appRegistrationResult.TenantId,
                 _appRegistrationResult.ApplicationId,
                 _appRegistrationResult.ClientSecret,
                 mappingConfig);
@@ -2165,6 +2221,115 @@
         {
             _isDeployingContainer = false;
             _statusMessage = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadConfigFiles()
+    {
+        try
+        {
+            if (_schemaResult == null || string.IsNullOrEmpty(_schemaResult.ConnectionId))
+            {
+                _errorMessage = "Cannot generate config files: No connection information available.";
+                return;
+            }
+
+            if (_appRegistrationResult == null)
+            {
+                _errorMessage = "Cannot generate config files: No app registration information available.";
+                return;
+            }
+
+            _statusMessage = "Generating configuration files...";
+            StateHasChanged();
+
+            // Always use the app registration credentials that were used to create the external connection.
+            // Using an override from a different tenant causes AADSTS7000229 (missing service principal).
+            var tenantId = _appRegistrationResult.TenantId;
+            var clientId = _appRegistrationResult.ApplicationId;
+            var clientSecret = _appRegistrationResult.ClientSecret;
+
+            // Create schema mapping config
+            var mappingConfig = JsonFieldParserService.ParseJsonToSchema(_configuration.JsonSample);
+            SemanticLabelMappingService.AssignSemanticLabels(mappingConfig.Fields);
+            mappingConfig.AllowedGroupIds = _configuration.AllowedGroupIds ?? new List<string>();
+
+            // Build ACLs configuration
+            var aclsConfig = mappingConfig.AllowedGroupIds.Select(groupId => new
+            {
+                type = "group",
+                value = groupId,
+                accessType = "grant"
+            }).ToList();
+
+            // Generate ingestion-config.json
+            var ingestionConfig = new
+            {
+                tenantId = tenantId,
+                clientId = clientId,
+                clientSecret = clientSecret,
+                connectionId = _schemaResult.ConnectionId,
+                defaultUrlBase = mappingConfig.DefaultUrlBase,
+                defaultAcls = aclsConfig
+            };
+
+            var ingestionConfigJson = System.Text.Json.JsonSerializer.Serialize(ingestionConfig, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            // Generate appsettings.json
+            var appSettingsConfig = new
+            {
+                Logging = new
+                {
+                    LogLevel = new
+                    {
+                        Default = "Information",
+                        Microsoft = "Warning",
+                        MicrosoftHostingLifetime = "Information"
+                    }
+                },
+                TENANT_ID = tenantId,
+                CLIENT_ID = clientId,
+                CLIENT_SECRET = clientSecret,
+                CONNECTION_ID = _schemaResult.ConnectionId,
+                DEFAULT_URL_BASE = mappingConfig.DefaultUrlBase,
+                SERVICE_PORT = "8080",
+                ASPNETCORE_ENVIRONMENT = "Production"
+            };
+
+            var appSettingsJson = System.Text.Json.JsonSerializer.Serialize(appSettingsConfig, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            // Download ingestion-config.json
+            var normalizedConnectionId = _schemaResult.ConnectionId.ToLower().Replace(" ", "-");
+            await JSRuntime.InvokeVoidAsync("downloadFile", 
+                $"{normalizedConnectionId}-config.json", 
+                "application/json", 
+                ingestionConfigJson);
+
+            // Small delay between downloads
+            await Task.Delay(500);
+
+            // Download appsettings.json
+            await JSRuntime.InvokeVoidAsync("downloadFile", 
+                $"{normalizedConnectionId}-appsettings.json", 
+                "application/json", 
+                appSettingsJson);
+
+            _successMessage = "Configuration files downloaded successfully! Check your Downloads folder.";
+            _statusMessage = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error generating config files: {ex.Message}";
+        }
+        finally
+        {
             StateHasChanged();
         }
     }
@@ -2268,6 +2433,12 @@
         }
         catch (Exception ex)
         {
+            if (ex is InvalidOperationException && (ex.Message?.Contains("statically rendered", StringComparison.OrdinalIgnoreCase) == true || ex.Message?.Contains("prerender", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                // Expected when prerendering; JS interop isn't available yet.
+                return false;
+            }
+
             Console.WriteLine($"Failed to restore state: {ex.Message}");
             return false;
         }

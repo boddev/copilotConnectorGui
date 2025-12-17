@@ -77,6 +77,7 @@ builder.Services.AddScoped<SemanticLabelMappingService>();
 builder.Services.AddScoped<ExternalConnectionValidationService>();
 builder.Services.AddSingleton<WebTerminalService>();
 builder.Services.AddSingleton<ContainerManagementService>();
+builder.Services.AddSingleton<TenantCredentialService>();
 
 // Configure application URLs
 builder.Services.Configure<CopilotConnectorGui.Models.ApplicationUrlsConfiguration>(
